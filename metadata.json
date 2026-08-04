@@ -1,0 +1,6 @@
+{
+  "name": "Mandatos Portfolio Funds - Dashboard de Gestión",
+  "description": "Dashboard profesional e interactivo de seguimiento de rentabilidades, asset allocation, niveles de crédito, backtest y contribuidores para clientes de inversión privada.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

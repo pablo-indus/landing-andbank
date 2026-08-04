@@ -1,0 +1,13 @@
+{
+  "collections": {
+    "appData": {
+      "latest": {
+        "profileKpis": "array",
+        "windowsData": "object",
+        "historicalAnnual": "object",
+        "historicalMonthly": "object",
+        "lastUpdated": "timestamp"
+      }
+    }
+  }
+}

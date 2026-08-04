@@ -1,0 +1,71 @@
+@import url('https://fonts.googleapis.com/css2?family=Verdana:wght@400;700&display=swap');
+@import "tailwindcss";
+@custom-variant dark (&:is(.dark *));
+
+html {  scroll-behavior: smooth;}
+body {  font-family: Verdana, Geneva, sans-serif;}
+
+@media print {
+  @page {
+    margin: 10mm;
+    size: A4 landscape;}
+  
+
+  body, .print\:block {
+    background-color: white !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .overflow-x-auto, .overflow-y-auto, .overflow-auto, [class*="max-h-"] {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  table {
+    white-space: normal !important;
+  }
+
+  .break-inside-avoid {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+html.dark .recharts-default-tooltip {
+  background-color: #18181b !important;
+  border-color: #3f3f46 !important;
+  color: #f4f4f5 !important;
+}
+html.dark .recharts-tooltip-item {
+  color: #f4f4f5 !important;
+}
+
+@media print {
+  .break-after-avoid {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+  .break-before-avoid {
+    break-before: avoid !important;
+    page-break-before: avoid !important;
+  }
+}

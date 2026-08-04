@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Bloquear acceso total por defecto
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    
+    // Permitir lectura pública de los datos de la app
+    match /appData/{document=**} {
+      allow read: if true;
+      // Las escrituras se hacen desde el servidor (Firebase Admin bypasses rules)
+      allow write: if false;
+    }
+  }
+}

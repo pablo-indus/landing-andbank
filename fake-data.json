@@ -1,0 +1,12 @@
+{
+  "profileKpis": [
+    {
+      "name": "Conservador",
+      "color": "#A99F93",
+      "p2025": 1.2,
+      "p2026YTD": 0.5,
+      "pJune": 0.2,
+      "volatility": 2.1
+    }
+  ]
+}
