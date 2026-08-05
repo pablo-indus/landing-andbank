@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { db } from './firebase';
+
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
 import { KpiStrip } from './components/KpiStrip';
@@ -15,8 +18,37 @@ import { SectionCredito } from './components/SectionCredito';
 import { SectionStyleBox } from './components/SectionStyleBox';
 import { Footer } from './components/Footer';
 import { PrintReportLayout } from './components/PrintReportLayout';
+import { AdminUpload } from './components/AdminUpload';
 
 export default function App() {
+  // 1. State to hold the live data from Firestore
+  const [liveData, setLiveData] = useState<any>(null);
+  const [loadingDb, setLoadingDb] = useState(true);
+
+  // 2. Listen to the most recent document in the 'monthly_reports' collection
+  useEffect(() => {
+    const q = query(
+      collection(db, 'monthly_reports'), 
+      orderBy('updatedAt', 'desc'), 
+      limit(1)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        setLiveData(snapshot.docs[0].data());
+      } else {
+        console.log("No data found in Firestore yet.");
+      }
+      setLoadingDb(false);
+    }, (error) => {
+      console.error("Error fetching live data:", error);
+      setLoadingDb(false);
+    });
+
+    // Cleanup the listener when the app unmounts
+    return () => unsubscribe();
+  }, []);
+
   const [isPrinting, setIsPrinting] = useState(false);
   const [printProfiles, setPrintProfiles] = useState<number[]>([]);
   const [isEmailing, setIsEmailing] = useState(false);
@@ -35,17 +67,18 @@ export default function App() {
       }, 500);
     };
     window.addEventListener('generate-pdf', handleGeneratePdf);
+    
     const handleEmailPdf = (e: any) => {
       setPrintProfiles(e.detail.profiles);
       setEmailData({ emails: e.detail.emails, subject: e.detail.subject, text: e.detail.text });
       setIsEmailing(true);
     };
     window.addEventListener('email-pdf', handleEmailPdf);
+    
     return () => {
       window.removeEventListener('generate-pdf', handleGeneratePdf);
       window.removeEventListener('email-pdf', handleEmailPdf);
     };
-    
   }, []);
 
   const [activeSection, setActiveSection] = useState<string>('perfilador');
@@ -94,39 +127,53 @@ export default function App() {
     };
   }, []);
 
+  // 3. Loading Screen (Prevents rendering the app before data arrives)
+  if (loadingDb) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-zinc-950">
+        <div className="text-zinc-500 font-bold uppercase tracking-widest animate-pulse">
+          Cargando base de datos...
+        </div>
+      </div>
+    );
+  }
+
+  // 4. Main App Render
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-50 font-sans antialiased selection:bg-slate-800 selection:text-white">
       {isPrinting || isEmailing ? (
         <PrintReportLayout profiles={printProfiles} isEmailing={isEmailing} emailData={emailData} onEmailDone={() => { setIsEmailing(false); setEmailData(null); }} />
       ) : (
         <>
+          {/* Top Bar */}
+          <Header activeSection={activeSection} />
 
-      {/* Top Bar */}
-      <Header activeSection={activeSection} />
+          {/* Hero Section */}
+          <Hero />
 
-      {/* Hero Section */}
-      <Hero />
+          {/* KPI Overview Strip */}
+          <KpiStrip />
 
-      {/* KPI Overview Strip */}
-      <KpiStrip />
+          {/* Main Content Sections */}
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
+            <SectionPerfilador />
+            <SectionRendimiento />
+            <SectionCambios data={liveData} />
+            <SectionBacktest />
+            <SectionDrawdown />
+            <SectionCorrelacion />
+            <SectionContribuidores />
+            <SectionComposicion />
+            <SectionAssetAllocation />
+            <SectionCredito />
+            <SectionStyleBox />
+            
+            {/* Admin Panel for Firebase Uploads */}
+            <AdminUpload />
+          </main>
 
-      {/* Main Content Sections */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
-        <SectionPerfilador />
-        <SectionRendimiento />
-        <SectionCambios />
-        <SectionBacktest />
-        <SectionDrawdown />
-        <SectionCorrelacion />
-        <SectionContribuidores />
-        <SectionComposicion />
-        <SectionAssetAllocation />
-        <SectionCredito />
-        <SectionStyleBox />
-      </main>
-
-      {/* Corporate Footer at the bottom */}
-      <Footer />
+          {/* Corporate Footer at the bottom */}
+          <Footer />
         </>
       )}
     </div>

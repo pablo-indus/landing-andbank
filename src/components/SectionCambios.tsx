@@ -1,7 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { HISTORICAL_CHANGES } from '../data/portfolioData';
+//import { HISTORICAL_CHANGES } from '../data/portfolioData';
 
-export const SectionCambios: React.FC<{ isPrintMode?: boolean }> = ({ isPrintMode }) => {
+export const SectionCambios: React.FC<{ isPrintMode?: boolean; data?: any }> = ({ isPrintMode, data }) => {
+  // Grab the live historical changes from the database, or use an empty list if it's missing
+  const HISTORICAL_CHANGES = data?.historicalChanges || [];
   const [activePeriodIdx, setActivePeriodIdx] = useState<number>(0);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
