@@ -63,3 +63,36 @@ console.log('\n--- comprobacion de 2020 (el dato que la tabla inventada falseaba
 const y2020 = data.annual.find((r) => r.period === '2020');
 console.log('  real   :', JSON.stringify(y2020?.byProfile));
 console.log('  inventado antes: Conservador +2.40%, Moderado +4.80%, Equilibrado +8.40%, Agresivo +12.00%');
+
+console.log('\n--- hoja "rentabilidades": KPIs ---');
+if (data.kpis) {
+  console.log('  columnas:', data.kpis.columns.join(' | '));
+  for (const [p, v] of Object.entries(data.kpis.rows)) {
+    console.log('  ' + p.padEnd(15) + data.kpis.columns.map((c) => (v[c] === null ? '-' : v[c]!.toFixed(2) + '%').padStart(10)).join(''));
+  }
+} else console.log('  (no encontrada)');
+
+console.log('\n--- hoja "rentabilidades": ventanas anualizadas ---');
+if (data.windows) {
+  console.log('  columnas:', data.windows.columns.join(' | '));
+  for (const [p, v] of Object.entries(data.windows.rows)) {
+    console.log('  ' + p.padEnd(15) + data.windows.columns.map((c) => (v[c] === null ? '-' : v[c]!.toFixed(2)).padStart(9)).join(''));
+  }
+} else console.log('  (no encontrada)');
+
+console.log('\n--- contraste con los KPIs escritos a mano en la web ---');
+const WEB: Record<string, { p2025: number; p2026: number; vol: number }> = {
+  'Conservador +': { p2025: 2.8, p2026: 1.5, vol: 1.7 },
+  Conservador: { p2025: 4.2, p2026: 2.3, vol: 2.3 },
+  Moderado: { p2025: 6.7, p2026: 4.5, vol: 4.7 },
+  Equilibrado: { p2025: 9.4, p2026: 5.8, vol: 6.3 },
+  Agresivo: { p2025: 11.9, p2026: 7.8, vol: 7.2 },
+  'Agresivo +': { p2025: 15.1, p2026: 10.7, vol: 9.7 },
+};
+const col = (needle: string) => data.kpis?.columns.find((c) => c.toLowerCase().includes(needle));
+const c2025 = col('2025'), c2026 = data.kpis?.columns.find((c) => c.trim() === '2026'), cVol = col('volat');
+for (const [p, w] of Object.entries(WEB)) {
+  const row = data.kpis?.rows[p];
+  const f = (a?: number | null, b?: number) => (a === undefined || a === null || b === undefined ? '?' : Math.abs(a - b) < 0.1 ? 'OK' : `DIF ${a.toFixed(2)} vs ${b}`);
+  console.log(`  ${p.padEnd(15)} 2025 ${f(row?.[c2025!], w.p2025).padEnd(18)} 2026 ${f(row?.[c2026!], w.p2026).padEnd(18)} vol ${f(row?.[cVol!], w.vol)}`);
+}

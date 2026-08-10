@@ -27,13 +27,28 @@ export interface ReturnRow {
   byProfile: Record<string, number>;
 }
 
+/**
+ * Tabla de la hoja "rentabilidades". Las columnas se leen tal cual vienen
+ * ("2025", "2026", "2Q 2026", "Junio", "Volat.") porque cambian cada mes:
+ * fijarlas en el codigo obligaria a tocarlo en cada cierre.
+ */
+export interface KpiTable {
+  columns: string[];
+  /** Por perfil y columna. null = la celda trae "-" (aun no hay historico). */
+  rows: Record<string, Record<string, number | null>>;
+}
+
 export interface ReturnsData {
   annual: ReturnRow[];
   monthly: ReturnRow[];
   volatility: ReturnRow[];
-  /** Perfiles realmente presentes en el archivo. */
+  /** Resumen del periodo actual, con los seis perfiles. */
+  kpis?: KpiTable;
+  /** Rentabilidades anualizadas por ventana temporal, con los seis perfiles. */
+  windows?: KpiTable;
+  /** Perfiles presentes en el historico anual/mensual. */
   profiles: string[];
-  /** Perfiles que la web muestra pero para los que no hay datos. */
+  /** Perfiles sin historico anual/mensual (aunque si tengan KPIs). */
   missingProfiles: string[];
 }
 
@@ -127,6 +142,75 @@ function readSheet(
   return { rows, profiles };
 }
 
+/**
+ * Lee las tablas de la hoja "rentabilidades".
+ *
+ * Hay dos, una debajo de la otra, y no empiezan en la misma columna: la
+ * cabecera se localiza buscando la celda "Perfiles" en vez de dar por hecha una
+ * posicion. A la derecha hay tablas auxiliares (comisiones, AUMs) que no forman
+ * parte de estas: se corta en cuanto aparece una cabecera vacia.
+ */
+function readKpiTables(workbook: XLSX.WorkBook): { kpis?: KpiTable; windows?: KpiTable } {
+  const sheetName = workbook.SheetNames.find((n) => normalise(n) === 'rentabilidades');
+  if (!sheetName) return {};
+
+  const grid = XLSX.utils.sheet_to_json<any[]>(workbook.Sheets[sheetName], {
+    header: 1,
+    defval: null,
+    blankrows: true,
+    raw: true,
+  });
+
+  const tables: KpiTable[] = [];
+
+  for (let r = 0; r < grid.length; r++) {
+    const row = grid[r];
+    if (!row) continue;
+
+    // Exactamente "Perfiles", en plural. A la derecha de la hoja hay tablas
+    // auxiliares (numero de carteras, AUMs) encabezadas por "Perfil" en
+    // singular, y aceptar el prefijo hacia que se leyeran esas por error.
+    const profileCol = row.findIndex(
+      (c: any) => typeof c === 'string' && normalise(c) === 'perfiles'
+    );
+    if (profileCol === -1) continue;
+
+    // Columnas de datos: desde la siguiente hasta la primera cabecera vacia.
+    const columns: { col: number; label: string }[] = [];
+    for (let c = profileCol + 1; c < row.length; c++) {
+      const raw = row[c];
+      if (raw === null || raw === undefined || String(raw).trim() === '') break;
+      columns.push({ col: c, label: String(raw).replace(/\s+/g, ' ').trim() });
+    }
+    if (columns.length === 0) continue;
+
+    const rows: Record<string, Record<string, number | null>> = {};
+    for (let i = r + 1; i < grid.length; i++) {
+      const dataRow = grid[i];
+      if (!dataRow) continue;
+      const profile = matchProfile(String(dataRow[profileCol] ?? ''));
+      if (!profile) {
+        // Una fila en blanco tras haber leido algo marca el fin de la tabla.
+        if (Object.keys(rows).length > 0) break;
+        continue;
+      }
+
+      const values: Record<string, number | null> = {};
+      for (const { col, label } of columns) {
+        const n = toNumber(dataRow[col]);
+        values[label] = n === null ? null : toPct(n);
+      }
+      rows[profile] = values;
+    }
+
+    if (Object.keys(rows).length > 0) {
+      tables.push({ columns: columns.map((c) => c.label), rows });
+    }
+  }
+
+  return { kpis: tables[0], windows: tables[1] };
+}
+
 /** Busca una hoja por palabras clave, tolerando variaciones de nombre. */
 const findSheet = (workbook: XLSX.WorkBook, ...required: string[]): string | undefined =>
   workbook.SheetNames.find((name) => {
@@ -170,10 +254,14 @@ export async function processReturnsExcel(file: File): Promise<ReturnsData> {
     throw new Error('Las hojas de rentabilidad no contenian ningun periodo legible.');
   }
 
+  const { kpis, windows } = readKpiTables(workbook);
+
   return {
     annual: annual.rows,
     monthly: monthly.rows,
     volatility: volatility.rows,
+    kpis,
+    windows,
     profiles,
     missingProfiles: ALL_PROFILES.filter((p) => !profiles.includes(p)),
   };
