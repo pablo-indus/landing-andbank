@@ -7,6 +7,7 @@ import { db, auth } from '../firebase';
 import { uploadHistoricalJson } from '../services/dataService';
 import { processPerformanceExcel } from '../utils/performanceProcessor';
 import { processCreditExcel } from '../utils/creditProcessor';
+import { processChangesExcel } from '../utils/changesProcessor';
 
 interface AdminModalProps {
   onClose: () => void;
@@ -17,13 +18,19 @@ interface AdminModalProps {
  * en lugar de depender del nombre del archivo: los nombres se cambian con facilidad
  * y provocaban que se procesara el informe equivocado sin avisar.
  */
-type ReportType = 'credito' | 'rendimiento' | 'historico-json';
+type ReportType = 'credito' | 'cambios' | 'rendimiento' | 'historico-json';
 
 const REPORT_TYPES: { id: ReportType; label: string; hint: string; accept: string }[] = [
   {
     id: 'credito',
     label: 'Niveles de credito',
     hint: 'Ej. NIVELES CREDITO GDC.xlsx — reemplaza todos los niveles de credito existentes.',
+    accept: '.xlsx,.xls',
+  },
+  {
+    id: 'cambios',
+    label: 'Historial de cambios',
+    hint: 'Ej. Plantilla Pagina Cambios.xlsx — una pestana por mes. Reemplaza todo el historial.',
     accept: '.xlsx,.xls',
   },
   {
@@ -131,6 +138,40 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
     return `Niveles de credito actualizados: ${Object.keys(creditUpdates).length} periodo(s).`;
   };
 
+  /**
+   * Sustituye todo el historial de cambios: el Excel contiene todos los meses,
+   * asi que se limpia antes para que no queden periodos huerfanos de una
+   * version anterior del archivo.
+   */
+  const uploadCambios = async (f: File) => {
+    const blocks = await processChangesExcel(f);
+
+    const existing = await getDocs(collection(db, 'monthly_reports'));
+    for (const d of existing.docs) {
+      if (d.data().historicalChanges) {
+        await updateDoc(d.ref, { historicalChanges: deleteField() });
+      }
+    }
+
+    for (const [docId, block] of Object.entries(blocks)) {
+      const ref = doc(db, 'monthly_reports', docId);
+      const snap = await getDoc(ref);
+      const payload = { historicalChanges: [block], updatedAt: new Date().toISOString() };
+
+      if (snap.exists()) {
+        await updateDoc(ref, payload);
+      } else {
+        await setDoc(ref, {
+          periodLabel: docId.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
+          ...payload,
+        });
+      }
+    }
+
+    const decisions = Object.values(blocks).reduce((n, b) => n + b.batches.length, 0);
+    return `Historial de cambios actualizado: ${Object.keys(blocks).length} periodo(s), ${decisions} decisiones.`;
+  };
+
   const uploadRendimiento = async (f: File) => {
     const perfData = await processPerformanceExcel(f);
 
@@ -159,6 +200,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
     try {
       let message: string;
       if (reportType === 'credito') message = await uploadCredito(file);
+      else if (reportType === 'cambios') message = await uploadCambios(file);
       else if (reportType === 'rendimiento') message = await uploadRendimiento(file);
       else message = await uploadHistoricalJson(file);
 
