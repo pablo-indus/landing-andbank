@@ -122,8 +122,16 @@ function readSheet(
 
   for (let r = headerIdx + 1; r < grid.length; r++) {
     const row = grid[r];
-    if (!row) continue;
-    const profile = matchProfile(String(row[0] ?? ''));
+    const label = String(row?.[0] ?? '').trim();
+
+    // Estas hojas contienen MAS DE UNA tabla. "Historico mensual" tiene las
+    // rentabilidades mensuales arriba y, mas abajo, otra tabla acumulada con los
+    // mismos nombres de perfil y las columnas desplazadas un mes. Sin cortar al
+    // final de la primera tabla, la segunda sobreescribia a la primera y el
+    // resultado eran rentabilidades mensuales que en realidad eran acumuladas.
+    if (profiles.length > 0 && (label === '' || label.toLowerCase().startsWith('perfil'))) break;
+
+    const profile = matchProfile(label);
     if (!profile) continue;
     profiles.push(profile);
 
