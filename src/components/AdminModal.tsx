@@ -8,6 +8,7 @@ import { uploadHistoricalJson } from '../services/dataService';
 import { processPerformanceExcel } from '../utils/performanceProcessor';
 import { processCreditExcel } from '../utils/creditProcessor';
 import { processChangesExcel } from '../utils/changesProcessor';
+import { processContributorsExcel } from '../utils/contributorsProcessor';
 
 interface AdminModalProps {
   onClose: () => void;
@@ -18,7 +19,7 @@ interface AdminModalProps {
  * en lugar de depender del nombre del archivo: los nombres se cambian con facilidad
  * y provocaban que se procesara el informe equivocado sin avisar.
  */
-type ReportType = 'credito' | 'cambios' | 'rendimiento' | 'historico-json';
+type ReportType = 'credito' | 'cambios' | 'contribuidores' | 'rendimiento' | 'historico-json';
 
 const REPORT_TYPES: { id: ReportType; label: string; hint: string; accept: string }[] = [
   {
@@ -31,6 +32,12 @@ const REPORT_TYPES: { id: ReportType; label: string; hint: string; accept: strin
     id: 'cambios',
     label: 'Historial de cambios',
     hint: 'Ej. Plantilla Pagina Cambios.xlsx — una pestana por mes. Reemplaza todo el historial.',
+    accept: '.xlsx,.xls',
+  },
+  {
+    id: 'contribuidores',
+    label: 'Contribuidores y detractores',
+    hint: 'Ej. LEADING CONTRIBUTORS - DETRACTORS.xlsx — anade el mes, sin borrar los anteriores.',
     accept: '.xlsx,.xls',
   },
   {
@@ -172,6 +179,35 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
     return `Historial de cambios actualizado: ${Object.keys(blocks).length} periodo(s), ${decisions} decisiones.`;
   };
 
+  /**
+   * A diferencia de credito y cambios, aqui NO se borra lo anterior: el archivo
+   * trae un solo mes, asi que cada subida anade un periodo al historico.
+   */
+  const uploadContribuidores = async (f: File) => {
+    const { blocks, warning } = await processContributorsExcel(f);
+
+    for (const [docId, block] of Object.entries(blocks)) {
+      const ref = doc(db, 'monthly_reports', docId);
+      const snap = await getDoc(ref);
+      const payload = {
+        monthlyAttributions: [block],
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (snap.exists()) {
+        await updateDoc(ref, payload);
+      } else {
+        await setDoc(ref, {
+          periodLabel: block.label,
+          ...payload,
+        });
+      }
+    }
+
+    const periods = Object.values(blocks).map((b) => b.label).join(', ');
+    return `Contribuidores actualizados: ${periods}.${warning ? ` ${warning}` : ''}`;
+  };
+
   const uploadRendimiento = async (f: File) => {
     const perfData = await processPerformanceExcel(f);
 
@@ -201,6 +237,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
       let message: string;
       if (reportType === 'credito') message = await uploadCredito(file);
       else if (reportType === 'cambios') message = await uploadCambios(file);
+      else if (reportType === 'contribuidores') message = await uploadContribuidores(file);
       else if (reportType === 'rendimiento') message = await uploadRendimiento(file);
       else message = await uploadHistoricalJson(file);
 
