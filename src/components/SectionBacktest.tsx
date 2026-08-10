@@ -4,10 +4,14 @@ import { PROFILES, PROFILE_COLORS, PROFILE_KPIS, WINDOWS_DATA, HISTORICAL_ANNUAL
 
 const TODAY = '2026-06-30';
 
+// Los escenarios 2020 y 2022 usan datos reales de las carteras.
+// El de 2008 NO: las series de Morningstar empiezan en 2010, asi que no existe
+// dato real de esa crisis. Se conserva como ilustracion y va marcado como
+// simulado para que no se confunda con rentabilidad historica.
 const STRESS_SCENARIOS = [
-  { id: '2020', label: 'COVID-19 (Feb-May 2020)', start: '2020-02-15', end: '2020-05-31' },
-  { id: '2022', label: 'Bear Market (2022)', start: '2021-12-31', end: '2022-10-31' },
-  { id: '2008', label: 'Crisis Financiera (2008)', start: '2008-01-01', end: '2009-03-31' }
+  { id: '2020', label: 'COVID-19 (Feb-May 2020)', start: '2020-02-15', end: '2020-05-31', simulated: false },
+  { id: '2022', label: 'Bear Market (2022)', start: '2021-12-31', end: '2022-10-31', simulated: false },
+  { id: '2008', label: 'Crisis Financiera (2008) · Simulado', start: '2008-01-01', end: '2009-03-31', simulated: true }
 ];
 
 
@@ -18,13 +22,20 @@ interface Trajectory {
 }
 
 export function buildTrajectory(profileIdx: number, isBenchmark = false): Trajectory {
-  if (HISTORICAL_VL && (HISTORICAL_VL as any)[profileIdx] && (HISTORICAL_VL as any)[profileIdx].length > 0) {
-    const rawData = (HISTORICAL_VL as any)[profileIdx];
+  // Las series reales de benchmark estan en las claves "b0".."b5" de vlData,
+  // una por perfil (ver scripts/generate-vldata.mjs).
+  // Antes el benchmark no se leia: se inventaba a partir de la propia cartera
+  // (valor * 0.9 mas una onda senoidal), por lo que nunca podia ser una
+  // comparacion real.
+  const seriesKey = isBenchmark ? `b${profileIdx}` : String(profileIdx);
+  const rawData = (HISTORICAL_VL as any)[seriesKey];
+
+  if (rawData && rawData.length > 0) {
     const step = Math.ceil(rawData.length / 400);
     const points = rawData.filter((_: any, i: number) => i % step === 0 || i === rawData.length - 1).map((pt: any) => ({ d: new Date(pt.d + "T00:00:00Z"), val: pt.v }));
     return {
       dates: points.map((p: any) => p.d),
-      vals: points.map((p: any, idx: number) => isBenchmark ? 100 + (p.val - 100) * 0.9 + Math.sin(idx/10) * 2 : p.val),
+      vals: points.map((p: any) => p.val),
       approx: false
     };
   }
@@ -58,7 +69,7 @@ export function buildTrajectory(profileIdx: number, isBenchmark = false): Trajec
   }
   return { 
     dates: points.map(p => p.d), 
-    vals: points.map((p, idx) => isBenchmark ? 100 + (p.val - 100) * 0.9 + Math.sin(idx/10) * 2 : p.val),
+    vals: points.map((p) => p.val),
     approx: true
   };
 }
@@ -102,21 +113,44 @@ export const SectionBacktest: React.FC<{ forcedProfileIndices?: number[]; isPrin
   }, []);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
-  // Simulation calculations
-  const renderIndices = activeIndices;
+  // El benchmark se compara siempre contra el primer perfil activo: cada perfil
+  // tiene el suyo propio, asi que mezclar varios a la vez no seria interpretable.
+  const benchmarkOf = activeIndices[0];
+  const hasBenchmark =
+    showBenchmark &&
+    benchmarkOf !== undefined &&
+    !!(HISTORICAL_VL as any)[`b${benchmarkOf}`]?.length;
+
+  // 999 es el indice reservado que el resto del componente ya trata como "Benchmark".
+  const renderIndices = hasBenchmark ? [...activeIndices, 999] : activeIndices;
 
   const trajectories = useMemo(() => {
     const map: Record<number, ReturnType<typeof buildTrajectory>> = {};
     activeIndices.forEach(pIdx => {
       map[pIdx] = buildTrajectory(pIdx);
     });
+    if (hasBenchmark) {
+      map[999] = buildTrajectory(benchmarkOf, true);
+    }
 
     return map;
-  }, [activeIndices, showBenchmark, renderIndices]);
+  }, [activeIndices, hasBenchmark, benchmarkOf]);
   
+  // La fecha minima es la del historico MAS CORTO de los que se pintan.
+  // Importa con el benchmark activo: algunas series de benchmark empiezan despues
+  // que la cartera (p.ej. Agresiva + arranca en 2018 y su indice en 2011, pero
+  // Conservadora arranca en 2010 y su indice en 2011). Si se permitiera empezar
+  // antes del inicio del benchmark, su linea saldria plana y la comparacion
+  // pareceria mucho mejor de lo que es.
   const minDateAllowed = useMemo(
-    () => trajectories[activeIndices[0]].dates[0].toISOString().slice(0, 10),
-    [trajectories, activeIndices]
+    () =>
+      renderIndices
+        .map(pIdx => trajectories[pIdx]?.dates[0])
+        .filter(Boolean)
+        .reduce((latest, d) => (d! > latest! ? d : latest))!
+        .toISOString()
+        .slice(0, 10),
+    [trajectories, renderIndices]
   );
 
   const simResult = useMemo(() => {
@@ -136,7 +170,8 @@ export const SectionBacktest: React.FC<{ forcedProfileIndices?: number[]; isPrin
       });
 
       if (scenario.id === '2008') {
-        // Fake 2008 data
+        // Curva ILUSTRATIVA, no historica: no hay datos reales de 2008
+        // (las series empiezan en 2010). Se dibuja una caida teorica por perfil.
         const steps = 15;
         for (let i = 0; i <= steps; i++) {
           const d = new Date(start.getTime() + (end.getTime() - start.getTime()) * (i / steps));
@@ -309,6 +344,11 @@ export const SectionBacktest: React.FC<{ forcedProfileIndices?: number[]; isPrin
               <span className="text-sm font-bold text-red-900 uppercase tracking-wider">Modo Stress Test</span>
             </label>
             <p className="text-xs text-red-700 ml-6">Simula el comportamiento de la cartera en caídas históricas extremas ({initialAmount.toLocaleString('es-ES')}€ iniciales).</p>
+            {isStressTest && STRESS_SCENARIOS.find(s => s.id === stressScenario)?.simulated && (
+              <p className="text-[11px] font-bold text-red-900 ml-6 mt-1.5 bg-red-100 border border-red-300 rounded px-2 py-1 inline-block">
+                Escenario simulado: no hay datos reales de carteras anteriores a 2010. Curva ilustrativa, no rentabilidad histórica.
+              </p>
+            )}
           </div>
           {isStressTest && (
             <select

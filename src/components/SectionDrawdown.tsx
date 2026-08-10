@@ -55,12 +55,17 @@ const trajectories = useMemo(() => {
     const makePoints = (pIdx: number, isBenchmark = false) => {
       let points: { d: Date; val: number }[] = [];
       
-      if (HISTORICAL_VL && (HISTORICAL_VL as any)[pIdx] && (HISTORICAL_VL as any)[pIdx].length > 0) {
-          const rawData = ((HISTORICAL_VL as any)[pIdx]).filter((pt: any) => new Date(pt.d + "T00:00:00Z") >= startDate);
-          
+      // Serie real: "b0".."b5" son los benchmarks, "0".."5" las carteras.
+      // Antes el benchmark se inventaba a partir de la propia cartera.
+      const seriesKey = isBenchmark ? `b${pIdx}` : String(pIdx);
+      const series = (HISTORICAL_VL as any)[seriesKey];
+
+      if (series && series.length > 0) {
+          const rawData = series.filter((pt: any) => new Date(pt.d + "T00:00:00Z") >= startDate);
+
           let maxSoFar = 0;
-          let allDdPoints = rawData.map((pt: any, idx: number) => {
-            const val = isBenchmark ? 100 + (pt.v - 100) * 0.9 + Math.sin(idx/10) * 2 : pt.v;
+          let allDdPoints = rawData.map((pt: any) => {
+            const val = pt.v;
             if (val > maxSoFar) maxSoFar = val;
             const dd = maxSoFar === 0 ? 0 : (val / maxSoFar - 1) * 100;
             return { d: new Date(pt.d + "T00:00:00Z"), dd: dd };
@@ -112,7 +117,15 @@ const trajectories = useMemo(() => {
       return points;
     };
 
-    const res = PROFILES.map((_, pIdx) => makePoints(pIdx, false));
+    const res: any[] = PROFILES.map((_, pIdx) => makePoints(pIdx, false));
+
+    // Con el benchmark activo solo hay un perfil seleccionado (ver toggleProfile),
+    // asi que comparamos contra el benchmark de ese perfil. 999 es el indice que
+    // el resto del componente ya pinta como "Benchmark".
+    const benchmarkOf = activeIndices[0];
+    if (showBenchmark && benchmarkOf !== undefined && (HISTORICAL_VL as any)[`b${benchmarkOf}`]?.length) {
+      res[999] = makePoints(benchmarkOf, true);
+    }
 
     return res;
   }, [selectedPeriod, showBenchmark, activeIndices]);
@@ -129,7 +142,8 @@ const trajectories = useMemo(() => {
   let xMax = -Infinity;
   let maxDd = 0;
 
-  const renderIndices = activeIndices;
+  // Incluimos el benchmark (indice 999) solo si se ha podido construir su serie.
+  const renderIndices = trajectories[999] ? [...activeIndices, 999] : activeIndices;
 
   renderIndices.forEach(pIdx => {
     const pts = trajectories[pIdx];
