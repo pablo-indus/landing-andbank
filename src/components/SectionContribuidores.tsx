@@ -1,9 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { MONTHLY_ATTRIBUTIONS, PROFILES } from '../data/portfolioData';
+import { useMonthlyReports } from '../hooks/useMonthlyReports';
 
 export const SectionContribuidores: React.FC<{ forcedProfileIdx?: number; forcedActiveIndices?: number[]; isPrintMode?: boolean }> = ({ forcedProfileIdx = 2, forcedActiveIndices, isPrintMode }) => {
+  const { attributions } = useMonthlyReports();
+
+  // Los datos estaticos siguen como respaldo hasta que la base de datos tenga
+  // suficientes meses cargados; asi la seccion nunca queda en blanco.
+  const blocks = React.useMemo(() => {
+    if (attributions.length === 0) return MONTHLY_ATTRIBUTIONS as any[];
+
+    // El acumulado del año viene dentro del bloque mas reciente, no como periodo
+    // propio (acumula desde enero, asi que archivarlo como un mes lo falsearia).
+    // Aqui se expone como una pestaña mas para no perder esa vista.
+    const [latest] = attributions;
+    const ytdTab =
+      latest?.ytd && latest.ytd.length > 0
+        ? [{ month: `ytd_${latest.month}`, label: `Acumulado ${latest.label.split(' ').pop()}`, data: latest.ytd }]
+        : [];
+
+    // El mes mas reciente va primero (es lo que se consulta a diario) y el
+    // acumulado justo detras, como estaban ordenados antes.
+    return [attributions[0], ...ytdTab, ...attributions.slice(1)];
+  }, [attributions]);
+
   const [profileIdx, setProfileIdx] = useState<number>(forcedProfileIdx);
-  const [activeMonthKey, setActiveMonthKey] = useState<string>(MONTHLY_ATTRIBUTIONS[0].month);
+  const [activeMonthKey, setActiveMonthKey] = useState<string>('');
 
   useEffect(() => {
     const handleApply = (e: any) => {
@@ -13,8 +35,18 @@ export const SectionContribuidores: React.FC<{ forcedProfileIdx?: number; forced
     return () => window.removeEventListener('apply-profile', handleApply);
   }, []);
 
-  const activeAttributionBlock =
-    MONTHLY_ATTRIBUTIONS.find((a) => a.month === activeMonthKey) || MONTHLY_ATTRIBUTIONS[0];
+  // Al llegar (o cambiar) los datos, se selecciona el mes mas reciente.
+  useEffect(() => {
+    if (blocks.length > 0) {
+      setActiveMonthKey((prev) =>
+        prev && blocks.some((b: any) => b.month === prev) ? prev : blocks[0].month
+      );
+    }
+  }, [blocks]);
+
+  if (blocks.length === 0) return null;
+
+  const activeAttributionBlock = blocks.find((a: any) => a.month === activeMonthKey) || blocks[0];
 
   const profileAttribution = activeAttributionBlock.data[profileIdx] || { contrib: [], detract: [] };
   const profilesToRender = forcedActiveIndices ? forcedActiveIndices : [profileIdx];
@@ -60,7 +92,7 @@ export const SectionContribuidores: React.FC<{ forcedProfileIdx?: number; forced
 
           {/* Time Horizon / Monthly Tabs */}
           <div className="flex items-center gap-1.5 overflow-x-auto">
-            {MONTHLY_ATTRIBUTIONS.map((attr) => {
+            {blocks.map((attr: any) => {
               const isActive = attr.month === activeMonthKey;
               return (
                 <button

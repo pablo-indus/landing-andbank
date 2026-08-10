@@ -15,8 +15,9 @@ import { db } from '../firebase';
  *   monthly_reports/performance_data   -> documento especial con rentabilidades
  */
 
-/** Documento especial: no es un periodo, no debe mezclarse con los meses. */
+/** Documentos especiales: no son periodos, no deben mezclarse con los meses. */
 export const PERFORMANCE_DOC_ID = 'performance_data';
+export const RETURNS_DOC_ID = 'returns_data';
 
 const MONTH_TO_NUM: Record<string, number> = {
   enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6,
@@ -62,8 +63,12 @@ export interface MonthlyReportsState {
   historicalChanges: any[];
   /** Snapshots de niveles de credito, del mas reciente al mas antiguo. */
   creditSnapshots: any[];
+  /** Contribuidores y detractores por mes, del mas reciente al mas antiguo. */
+  attributions: any[];
   /** Documento de rentabilidades calculadas, o null si aun no se ha subido. */
   performance: any | null;
+  /** Series netas del libro AA (anual, mensual, volatilidad, KPIs). */
+  returns: any | null;
   /** Fecha de la ultima actualizacion registrada en la base de datos. */
   lastUpdated: Date | null;
   loading: boolean;
@@ -75,7 +80,9 @@ export function useMonthlyReports(): MonthlyReportsState {
     reports: [],
     historicalChanges: [],
     creditSnapshots: [],
+    attributions: [],
     performance: null,
+    returns: null,
     lastUpdated: null,
     loading: true,
     error: null,
@@ -87,6 +94,7 @@ export function useMonthlyReports(): MonthlyReportsState {
       (snapshot) => {
         const reports: { id: string; data: any }[] = [];
         let performance: any | null = null;
+        let returns: any | null = null;
         let lastUpdated: Date | null = null;
 
         snapshot.forEach((docSnap) => {
@@ -99,6 +107,10 @@ export function useMonthlyReports(): MonthlyReportsState {
 
           if (docSnap.id === PERFORMANCE_DOC_ID) {
             performance = data;
+            return;
+          }
+          if (docSnap.id === RETURNS_DOC_ID) {
+            returns = data;
             return;
           }
           reports.push({ id: docSnap.id, data });
@@ -128,11 +140,21 @@ export function useMonthlyReports(): MonthlyReportsState {
             return (b.label ?? '').localeCompare(a.label ?? '');
           });
 
+        // Un bloque de atribucion por periodo, del mas reciente al mas antiguo.
+        const attributions = reports
+          .flatMap(({ data }) =>
+            Array.isArray(data.monthlyAttributions) ? data.monthlyAttributions : []
+          )
+          .filter((block: any) => Array.isArray(block?.data) && block.data.length > 0)
+          .sort((a: any, b: any) => periodToSortKey(b.month) - periodToSortKey(a.month));
+
         setState({
           reports,
           historicalChanges,
           creditSnapshots,
+          attributions,
           performance,
+          returns,
           lastUpdated,
           loading: false,
           error: null,
