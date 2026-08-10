@@ -1,16 +1,21 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Bloquear acceso total por defecto
+
+    // Denegar todo por defecto. Cualquier coleccion no listada abajo queda bloqueada.
     match /{document=**} {
       allow read, write: if false;
     }
-    
-    // Permitir lectura pública de los datos de la app
-    match /appData/{document=**} {
+
+    // Datos mensuales del dashboard.
+    // Lectura publica: la landing es de uso interno y los datos no son confidenciales
+    // dentro de la empresa, por lo que no exigimos login para consultarla.
+    // Escritura: solo usuarios autenticados (panel de administracion).
+    // Este es el unico control real de acceso: la contrasena del formulario es
+    // solo una capa de interfaz y no protege nada por si sola.
+    match /monthly_reports/{docId} {
       allow read: if true;
-      // Las escrituras se hacen desde el servidor (Firebase Admin bypasses rules)
-      allow write: if false;
+      allow write: if request.auth != null;
     }
   }
 }

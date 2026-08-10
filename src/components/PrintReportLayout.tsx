@@ -7,90 +7,21 @@ import { SectionAssetAllocation } from './SectionAssetAllocation';
 import { SectionRendimiento } from './SectionRendimiento';
 import { SectionContribuidores } from './SectionContribuidores';
 import { globalSettings } from '../store';
-
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
-import { Mail, CheckCircle2, AlertCircle } from 'lucide-react';
+import { useMonthlyReports } from '../hooks/useMonthlyReports';
 
 interface PrintReportLayoutProps {
   profiles: number[];
-  isEmailing?: boolean;
-  emailData?: { emails: string[], subject?: string, text?: string } | null;
-  onEmailDone?: () => void;
 }
 
-export const PrintReportLayout: React.FC<PrintReportLayoutProps> = ({ profiles, isEmailing, emailData, onEmailDone }) => {
-  const [emailStatus, setEmailStatus] = React.useState<'generating' | 'sending' | 'success' | 'error' | 'idle'>('idle');
-  
-  useEffect(() => {
-    if (isEmailing && emailData && emailStatus === 'idle') {
-      const sendEmail = async () => {
-        try {
-          setEmailStatus('generating');
-          // Wait a bit for charts to render
-          await new Promise(r => setTimeout(r, 1000));
-          
-          const reportEl = document.getElementById('report-container');
-          if (!reportEl) throw new Error('Report container not found');
-
-          const canvas = await html2canvas(reportEl, { scale: 1.5, useCORS: true });
-          const imgData = canvas.toDataURL('image/jpeg', 0.8);
-          
-          const pdf = new jsPDF({
-            orientation: 'landscape',
-            unit: 'mm',
-            format: 'a4'
-          });
-          
-          const pdfWidth = pdf.internal.pageSize.getWidth();
-          const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-          let heightLeft = pdfHeight;
-          let position = 0;
-          
-          pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
-          heightLeft -= pdf.internal.pageSize.getHeight();
-          
-          while (heightLeft >= 0) {
-            position = heightLeft - pdfHeight;
-            pdf.addPage();
-            pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
-            heightLeft -= pdf.internal.pageSize.getHeight();
-          }
-          
-          const pdfBlob = pdf.output('blob');
-          
-          setEmailStatus('sending');
-          
-          const formData = new FormData();
-          formData.append('pdf', pdfBlob, 'Reporte_Inversion.pdf');
-          formData.append('emails', JSON.stringify(emailData.emails));
-          if (emailData.subject) formData.append('subject', emailData.subject);
-          if (emailData.text) formData.append('text', emailData.text);
-          
-          const res = await fetch('/api/send-report', {
-            method: 'POST',
-            body: formData
-          });
-          
-          if (!res.ok) throw new Error('API Error');
-          
-          setEmailStatus('success');
-          setTimeout(() => {
-            if (onEmailDone) onEmailDone();
-          }, 3000);
-          
-        } catch (err) {
-          console.error(err);
-          setEmailStatus('error');
-          setTimeout(() => {
-            if (onEmailDone) onEmailDone();
-          }, 3000);
-        }
-      };
-      
-      sendEmail();
-    }
-  }, [isEmailing, emailData, emailStatus, onEmailDone]);
+export const PrintReportLayout: React.FC<PrintReportLayoutProps> = ({ profiles }) => {
+  // La portada mostraba "Julio 2026" escrito a mano, asi que salia mal en
+  // cualquier otro mes. Ahora refleja la fecha real de los datos publicados.
+  const { lastUpdated } = useMonthlyReports();
+  const coverDate = (lastUpdated ?? new Date()).toLocaleDateString('es-ES', {
+    month: 'long',
+    year: 'numeric',
+  });
+  const coverDateLabel = coverDate.charAt(0).toUpperCase() + coverDate.slice(1);
 
   useEffect(() => {
     const defaultTitle = document.title;
@@ -104,40 +35,6 @@ export const PrintReportLayout: React.FC<PrintReportLayoutProps> = ({ profiles, 
 
   return (
     <>
-      {isEmailing && (
-        <div className="fixed inset-0 z-[200] bg-zinc-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-white">
-          <div className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 p-8 rounded-2xl shadow-2xl max-w-sm w-full flex flex-col items-center text-center animate-in zoom-in-95 duration-300">
-            {emailStatus === 'generating' && (
-              <>
-                <div className="w-12 h-12 border-4 border-red-600 border-t-transparent rounded-full animate-spin mb-4" />
-                <h3 className="text-lg font-bold">Generando PDF...</h3>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">Renderizando gráficos y datos</p>
-              </>
-            )}
-            {emailStatus === 'sending' && (
-              <>
-                <Mail className="w-12 h-12 text-blue-600 animate-pulse mb-4" />
-                <h3 className="text-lg font-bold">Enviando Email...</h3>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">Conectando con el servidor</p>
-              </>
-            )}
-            {emailStatus === 'success' && (
-              <>
-                <CheckCircle2 className="w-12 h-12 text-emerald-600 mb-4" />
-                <h3 className="text-lg font-bold text-emerald-700">¡Enviado con éxito!</h3>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">El reporte ha sido enviado a los clientes</p>
-              </>
-            )}
-            {emailStatus === 'error' && (
-              <>
-                <AlertCircle className="w-12 h-12 text-red-600 mb-4" />
-                <h3 className="text-lg font-bold text-red-700">Error al enviar</h3>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">No se pudo enviar el email. Inténtelo más tarde.</p>
-              </>
-            )}
-          </div>
-        </div>
-      )}
       <div id="report-container" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 print:block" style={{ WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}>
         
         {/* Cover Page */}
@@ -156,7 +53,7 @@ export const PrintReportLayout: React.FC<PrintReportLayoutProps> = ({ profiles, 
                Consulta Histórica
              </h1>
              <p className="text-xl font-bold text-[#333333] mb-8">
-               Julio 2026
+               {coverDateLabel}
              </p>
              <div className="text-lg font-bold text-[#444444] flex flex-col items-end gap-1 mt-auto pb-4">
                {profiles.map(p => (

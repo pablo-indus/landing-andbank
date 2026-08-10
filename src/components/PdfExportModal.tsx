@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { PROFILES } from '../data/portfolioData';
-import { Mail, Printer } from 'lucide-react';
 
 interface PdfExportModalProps {
   onClose: () => void;
@@ -11,40 +10,16 @@ interface PdfExportModalProps {
 
 export const PdfExportModal: React.FC<PdfExportModalProps> = ({ onClose, onPrint }) => {
   const [selected, setSelected] = useState<number[]>([2]); // Default Moderado
-  const [mode, setMode] = useState<'print' | 'email'>('print');
-  const [emails, setEmails] = useState<string>('');
-  const [subject, setSubject] = useState<string>('Consulta Histórica');
-  const [message, setMessage] = useState<string>('Adjunto el reporte de consulta histórica.');
-
 
   const toggleProfile = (idx: number) => {
-    setSelected(prev => 
+    setSelected(prev =>
       prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
     );
   };
 
   const handlePrint = () => {
     if (selected.length === 0) return;
-    if (mode === 'print') {
-      onPrint(selected);
-    } else {
-      const emailList = emails.split(',').map(e => e.trim()).filter(e => e.includes('@'));
-      if (emailList.length === 0) {
-        alert('Por favor introduzca al menos un email válido.');
-        return;
-      }
-      
-      const event = new CustomEvent('email-pdf', {
-        detail: {
-          profiles: selected,
-          emails: emailList,
-          subject,
-          text: message
-        }
-      });
-      window.dispatchEvent(event);
-      onClose();
-    }
+    onPrint(selected);
   };
 
   return createPortal(
@@ -58,20 +33,6 @@ export const PdfExportModal: React.FC<PdfExportModalProps> = ({ onClose, onPrint
         </div>
         
         <div className="p-5 space-y-5">
-          <div className="flex bg-zinc-100 dark:bg-zinc-800 p-1 rounded-md">
-            <button
-              onClick={() => setMode('print')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 text-[11px] font-bold uppercase tracking-wider rounded transition-colors ${mode === 'print' ? 'bg-white dark:bg-zinc-900 shadow text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:text-zinc-300'}`}
-            >
-              <Printer size={14} /> Imprimir / PDF
-            </button>
-            <button
-              onClick={() => setMode('email')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 text-[11px] font-bold uppercase tracking-wider rounded transition-colors ${mode === 'email' ? 'bg-white dark:bg-zinc-900 shadow text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:text-zinc-300'}`}
-            >
-              <Mail size={14} /> Enviar Email
-            </button>
-          </div>
           <div>
             <label className="block text-[11px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-3">
               1. Seleccionar Perfiles

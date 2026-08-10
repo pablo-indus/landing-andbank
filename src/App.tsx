@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
-import { db } from './firebase';
+import { useMonthlyReports } from './hooks/useMonthlyReports';
 
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
@@ -18,41 +17,13 @@ import { SectionCredito } from './components/SectionCredito';
 import { SectionStyleBox } from './components/SectionStyleBox';
 import { Footer } from './components/Footer';
 import { PrintReportLayout } from './components/PrintReportLayout';
-import { AdminUpload } from './components/AdminUpload';
 
 export default function App() {
-  // 1. State to hold the live data from Firestore
-  const [liveData, setLiveData] = useState<any>(null);
-  const [loadingDb, setLoadingDb] = useState(true);
-
-  // 2. Listen to the most recent document in the 'monthly_reports' collection
-  useEffect(() => {
-    const q = query(
-      collection(db, 'monthly_reports'), 
-      orderBy('updatedAt', 'desc'), 
-      limit(1)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (!snapshot.empty) {
-        setLiveData(snapshot.docs[0].data());
-      } else {
-        console.log("No data found in Firestore yet.");
-      }
-      setLoadingDb(false);
-    }, (error) => {
-      console.error("Error fetching live data:", error);
-      setLoadingDb(false);
-    });
-
-    // Cleanup the listener when the app unmounts
-    return () => unsubscribe();
-  }, []);
+  // Fuente unica de datos: una sola suscripcion compartida por toda la app.
+  const { loading: loadingDb, error: dbError, lastUpdated, reports } = useMonthlyReports();
 
   const [isPrinting, setIsPrinting] = useState(false);
   const [printProfiles, setPrintProfiles] = useState<number[]>([]);
-  const [isEmailing, setIsEmailing] = useState(false);
-  const [emailData, setEmailData] = useState<{emails: string[], subject?: string, text?: string} | null>(null);
 
   useEffect(() => {
     const handleGeneratePdf = (e: any) => {
@@ -67,17 +38,9 @@ export default function App() {
       }, 500);
     };
     window.addEventListener('generate-pdf', handleGeneratePdf);
-    
-    const handleEmailPdf = (e: any) => {
-      setPrintProfiles(e.detail.profiles);
-      setEmailData({ emails: e.detail.emails, subject: e.detail.subject, text: e.detail.text });
-      setIsEmailing(true);
-    };
-    window.addEventListener('email-pdf', handleEmailPdf);
-    
+
     return () => {
       window.removeEventListener('generate-pdf', handleGeneratePdf);
-      window.removeEventListener('email-pdf', handleEmailPdf);
     };
   }, []);
 
@@ -141,8 +104,8 @@ export default function App() {
   // 4. Main App Render
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-50 font-sans antialiased selection:bg-slate-800 selection:text-white">
-      {isPrinting || isEmailing ? (
-        <PrintReportLayout profiles={printProfiles} isEmailing={isEmailing} emailData={emailData} onEmailDone={() => { setIsEmailing(false); setEmailData(null); }} />
+      {isPrinting ? (
+        <PrintReportLayout profiles={printProfiles} />
       ) : (
         <>
           {/* Top Bar */}
@@ -156,9 +119,26 @@ export default function App() {
 
           {/* Main Content Sections */}
           <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
+            
+            {/*
+              Aviso no bloqueante. Antes, si la base de datos estaba vacia no se
+              renderizaba ninguna seccion, aunque la mayoria no dependen de ella.
+              Ahora se avisa del problema pero la pagina sigue siendo utilizable.
+            */}
+            {(dbError || (!loadingDb && reports.length === 0)) && (
+              <div className="mt-8 px-4 py-3 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800">
+                <p className="text-xs font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider">
+                  {dbError ? 'Sin conexion con la base de datos' : 'Base de datos vacia'}
+                </p>
+                <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-0.5">
+                  Se muestran los ultimos datos disponibles. Sube un informe desde el panel de administracion para actualizarlos.
+                </p>
+              </div>
+            )}
+
             <SectionPerfilador />
             <SectionRendimiento />
-            <SectionCambios data={liveData} />
+            <SectionCambios />
             <SectionBacktest />
             <SectionDrawdown />
             <SectionCorrelacion />
@@ -167,9 +147,19 @@ export default function App() {
             <SectionAssetAllocation />
             <SectionCredito />
             <SectionStyleBox />
-            
-            {/* Admin Panel for Firebase Uploads */}
-            <AdminUpload />
+
+            {/* Permite al equipo comprobar de un vistazo si la ultima subida se aplico. */}
+            {lastUpdated && (
+              <p className="text-[10px] text-zinc-400 dark:text-zinc-500 text-right pt-4">
+                Ultima actualizacion de datos:{' '}
+                {lastUpdated.toLocaleDateString('es-ES', {
+                  day: '2-digit',
+                  month: 'long',
+                  year: 'numeric',
+                })}
+              </p>
+            )}
+
           </main>
 
           {/* Corporate Footer at the bottom */}
