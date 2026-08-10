@@ -77,7 +77,10 @@ const cell = (row: any[] | undefined, idx: number): string => {
   if (!row || idx < 0) return '';
   const value = row[idx];
   if (value === null || value === undefined) return '';
-  return String(value).trim();
+  // Los racionales llevan saltos de linea de Excel (CRLF). Se normalizan a LF
+  // para que dos lecturas del mismo archivo den exactamente el mismo texto y
+  // las comparaciones entre versiones no muestren diferencias falsas.
+  return String(value).replace(/\r\n/g, '\n').trim();
 };
 
 /**
