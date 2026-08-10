@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { PROFILES, PROFILE_COLORS, HISTORICAL_ANNUAL, HISTORICAL_MONTHLY, HISTORICAL_VL } from '../data/portfolioData';
+import { PROFILES, PROFILE_COLORS, HISTORICAL_VL } from '../data/portfolioData';
 import { ScrollableTabs } from './ScrollableTabs';
 
 type Period = 'YTD' | '1Y' | '3Y' | '5Y' | 'Desde 2009';
@@ -60,61 +60,29 @@ const trajectories = useMemo(() => {
       const seriesKey = isBenchmark ? `b${pIdx}` : String(pIdx);
       const series = (HISTORICAL_VL as any)[seriesKey];
 
-      if (series && series.length > 0) {
-          const rawData = series.filter((pt: any) => new Date(pt.d + "T00:00:00Z") >= startDate);
+      // Sin serie no se dibuja nada. El respaldo anterior reconstruia la curva a
+      // partir de HISTORICAL_ANNUAL/HISTORICAL_MONTHLY (cifras inventadas) y le
+      // sumaba ruido senoidal. Mejor no pintar que pintar datos que no existieron.
+      if (!series || series.length === 0) return [];
 
-          let maxSoFar = 0;
-          let allDdPoints = rawData.map((pt: any) => {
-            const val = pt.v;
-            if (val > maxSoFar) maxSoFar = val;
-            const dd = maxSoFar === 0 ? 0 : (val / maxSoFar - 1) * 100;
-            return { d: new Date(pt.d + "T00:00:00Z"), dd: dd };
-          });
-          
-          const step = Math.ceil(allDdPoints.length / 400);
-          let minDdIndex = 0;
-          for (let i = 1; i < allDdPoints.length; i++) {
-            if (allDdPoints[i].dd < allDdPoints[minDdIndex].dd) {
-              minDdIndex = i;
-            }
-          }
-          return allDdPoints.filter((_: any, i: number) => i % step === 0 || i === allDdPoints.length - 1 || i === minDdIndex);
-      } else {
-          let currentVal = 100;
-          points.push({ d: new Date('2008-12-31T00:00:00Z'), val: currentVal });
-          
-          for (let y = 2009; y <= 2020; y++) {
-            const annRet = HISTORICAL_ANNUAL[y][pIdx] / 100;
-            const monthlyBase = annRet / 12;
-            for (let m = 0; m < 12; m++) {
-              const noise = Math.sin(y * 12 + m + pIdx * 7) * 0.02;
-              currentVal *= (1 + monthlyBase + noise);
-              points.push({ d: new Date(Date.UTC(y, m + 1, 0)), val: currentVal });
-            }
-          }
-          
-          for (let y = 2021; y <= 2026; y++) {
-            const months = HISTORICAL_MONTHLY[y];
-            if (!months) continue;
-            for (let m = 0; m < months.length; m++) {
-              currentVal *= (1 + months[m][pIdx] / 100);
-              points.push({ d: new Date(Date.UTC(y, m + 1, 0)), val: currentVal });
-            }
-          }
-          
-          let maxSoFar = 0;
-          let filteredPoints = points.filter(pt => pt.d >= startDate);
-          if (filteredPoints.length === 0) filteredPoints = points;
-          let allDdPoints = filteredPoints.map((pt, idx) => {
-            const val = isBenchmark ? 100 + (pt.val - 100) * 0.9 + Math.sin(idx/10) * 2 : pt.val;
-            if (val > maxSoFar) maxSoFar = val;
-            const dd = maxSoFar === 0 ? 0 : (val / maxSoFar - 1) * 100;
-            return { d: pt.d, dd: dd } as any;
-          });
-          points = allDdPoints;
+      const rawData = series.filter((pt: any) => new Date(pt.d + 'T00:00:00Z') >= startDate);
+
+      let maxSoFar = 0;
+      const allDdPoints = rawData.map((pt: any) => {
+        const val = pt.v;
+        if (val > maxSoFar) maxSoFar = val;
+        const dd = maxSoFar === 0 ? 0 : (val / maxSoFar - 1) * 100;
+        return { d: new Date(pt.d + 'T00:00:00Z'), dd };
+      });
+
+      const step = Math.ceil(allDdPoints.length / 400);
+      let minDdIndex = 0;
+      for (let i = 1; i < allDdPoints.length; i++) {
+        if (allDdPoints[i].dd < allDdPoints[minDdIndex].dd) minDdIndex = i;
       }
-      
-      return points;
+      return allDdPoints.filter(
+        (_: any, i: number) => i % step === 0 || i === allDdPoints.length - 1 || i === minDdIndex
+      );
     };
 
     const res: any[] = PROFILES.map((_, pIdx) => makePoints(pIdx, false));

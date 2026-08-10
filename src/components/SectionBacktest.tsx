@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { globalSettings } from '../store';
-import { PROFILES, PROFILE_COLORS, PROFILE_KPIS, WINDOWS_DATA, HISTORICAL_ANNUAL, HISTORICAL_MONTHLY, HISTORICAL_VL } from '../data/portfolioData';
+import { PROFILES, PROFILE_COLORS, PROFILE_KPIS, WINDOWS_DATA, HISTORICAL_VL } from '../data/portfolioData';
 
 const TODAY = '2026-06-30';
 
@@ -30,47 +30,24 @@ export function buildTrajectory(profileIdx: number, isBenchmark = false): Trajec
   const seriesKey = isBenchmark ? `b${profileIdx}` : String(profileIdx);
   const rawData = (HISTORICAL_VL as any)[seriesKey];
 
-  if (rawData && rawData.length > 0) {
-    const step = Math.ceil(rawData.length / 400);
-    const points = rawData.filter((_: any, i: number) => i % step === 0 || i === rawData.length - 1).map((pt: any) => ({ d: new Date(pt.d + "T00:00:00Z"), val: pt.v }));
-    return {
-      dates: points.map((p: any) => p.d),
-      vals: points.map((p: any) => p.val),
-      approx: false
-    };
+  // Sin serie no se dibuja nada. Antes habia aqui un respaldo que reconstruia la
+  // curva a partir de HISTORICAL_ANNUAL/HISTORICAL_MONTHLY, pero esas tablas
+  // contenian cifras inventadas (cada ano era un mismo numero base multiplicado
+  // por 1/2/3.5/5/7/9 segun el perfil). Es preferible no pintar nada a pintar
+  // rentabilidades que no existieron.
+  if (!rawData || rawData.length === 0) {
+    return { dates: [], vals: [], approx: true };
   }
 
-  // Use exact historical data from 2008 baseline
-  const points: { d: Date; val: number }[] = [];
-  let currentVal = 100;
-  
-  // Baseline 2008-12-31
-  points.push({ d: new Date('2008-12-31T00:00:00Z'), val: currentVal });
-  
-  // Annual points (2009-2020)
-  for (let y = 2009; y <= 2020; y++) {
-    const annRet = HISTORICAL_ANNUAL[y][profileIdx];
-    currentVal = currentVal * (1 + annRet / 100);
-    points.push({ d: new Date(`${y}-12-31T00:00:00Z`), val: currentVal });
-  }
+  const step = Math.ceil(rawData.length / 400);
+  const points = rawData
+    .filter((_: any, i: number) => i % step === 0 || i === rawData.length - 1)
+    .map((pt: any) => ({ d: new Date(pt.d + 'T00:00:00Z'), val: pt.v }));
 
-  // Monthly points (2021-2026)
-  for (let y = 2021; y <= 2026; y++) {
-    const months = HISTORICAL_MONTHLY[y];
-    if (!months) continue;
-    for (let m = 0; m < months.length; m++) {
-      const monRet = months[m][profileIdx];
-      currentVal = currentVal * (1 + monRet / 100);
-      
-      // Last day of month
-      const isLastDay = new Date(Date.UTC(y, m + 1, 0));
-      points.push({ d: isLastDay, val: currentVal });
-    }
-  }
-  return { 
-    dates: points.map(p => p.d), 
-    vals: points.map((p) => p.val),
-    approx: true
+  return {
+    dates: points.map((p: any) => p.d),
+    vals: points.map((p: any) => p.val),
+    approx: false
   };
 }
 

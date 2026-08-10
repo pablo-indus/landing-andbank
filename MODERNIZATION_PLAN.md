@@ -238,6 +238,30 @@ a clientes por cifras calculadas. Antes de hacerlo, el usuario debe subir el Exc
 rendimientos y comparar el resultado calculado contra las cifras actuales, para confirmar que
 `performanceProcessor.ts` calcula lo que se espera.
 
+## Comparacion cartera vs benchmark: rebasar SIEMPRE
+
+Al comparar una cartera con su benchmark hay que partir de una **fecha de inicio
+comun**. Las series no empiezan a la vez: MSCI World arranca en 2011 y la cartera
+Agresiva + en 2018, asi que comparar sus valores finales (157,64 vs 596,05) le da
+al indice seis años y medio de ventaja. Rebasando ambos a 100 en la fecha comun:
+
+| Perfil | Inicio comun | Cartera | Benchmark | Diferencia |
+|---|---|---|---|---|
+| Conservador + | 2011-07-16 | 39,5% | 14,8% | +24,6 pp cartera |
+| Conservador | 2011-07-16 | 39,4% | 36,4% | +3,1 pp cartera |
+| Moderado | 2011-11-17 | 72,1% | 81,8% | -9,6 pp benchmark |
+| Equilibrado | 2011-11-17 | 113,6% | 68,6% | +44,9 pp cartera |
+| Agresivo | 2012-11-17 | 122,8% | 133,0% | -10,2 pp benchmark |
+| Agresivo + | 2018-01-01 | 57,6% | 179,0% | -121,3 pp benchmark |
+
+La aplicacion ya lo hace bien: el backtest normaliza en la fecha de inicio
+(`units = importe / valor_en_inicio`) y el drawdown es relativo al maximo movil.
+Ademas la fecha minima seleccionable es la de la serie mas corta en pantalla.
+
+Nota para el usuario: el benchmark de Agresiva + es MSCI World, 100% renta
+variable. Si la cartera no lo es, la comparacion le es estructuralmente
+desfavorable — es una decision de eleccion de benchmark, no un problema de datos.
+
 ## Pendiente — Fase 3 (bloqueada)
 
 No se pueden escribir los parsers restantes sin ver los archivos Excel reales. Hace falta del
