@@ -9,6 +9,7 @@ import { processPerformanceExcel } from '../utils/performanceProcessor';
 import { processCreditExcel } from '../utils/creditProcessor';
 import { processChangesExcel } from '../utils/changesProcessor';
 import { processContributorsExcel } from '../utils/contributorsProcessor';
+import { processReturnsExcel } from '../utils/returnsProcessor';
 
 interface AdminModalProps {
   onClose: () => void;
@@ -19,7 +20,13 @@ interface AdminModalProps {
  * en lugar de depender del nombre del archivo: los nombres se cambian con facilidad
  * y provocaban que se procesara el informe equivocado sin avisar.
  */
-type ReportType = 'credito' | 'cambios' | 'contribuidores' | 'rendimiento' | 'historico-json';
+type ReportType =
+  | 'credito'
+  | 'cambios'
+  | 'contribuidores'
+  | 'rentabilidades'
+  | 'rendimiento'
+  | 'historico-json';
 
 const REPORT_TYPES: { id: ReportType; label: string; hint: string; accept: string }[] = [
   {
@@ -38,6 +45,12 @@ const REPORT_TYPES: { id: ReportType; label: string; hint: string; accept: strin
     id: 'contribuidores',
     label: 'Contribuidores y detractores',
     hint: 'Ej. LEADING CONTRIBUTORS - DETRACTORS.xlsx — anade el mes, sin borrar los anteriores.',
+    accept: '.xlsx,.xls',
+  },
+  {
+    id: 'rentabilidades',
+    label: 'Rentabilidades netas (libro AA)',
+    hint: 'Ej. AA GDC 5 - ACTUAL.xlsx — historico anual, mensual y volatilidad, ya netos de comisiones.',
     accept: '.xlsx,.xls',
   },
   {
@@ -208,6 +221,27 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
     return `Contribuidores actualizados: ${periods}.${warning ? ` ${warning}` : ''}`;
   };
 
+  /**
+   * Serie historica completa, no un mes suelto: se guarda en un unico documento
+   * y cada subida lo reemplaza entero.
+   */
+  const uploadRentabilidades = async (f: File) => {
+    const data = await processReturnsExcel(f);
+
+    await setDoc(doc(db, 'monthly_reports', 'returns_data'), {
+      ...data,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const missing = data.missingProfiles.length
+      ? ` Sin datos para: ${data.missingProfiles.join(' y ')}.`
+      : '';
+    return (
+      `Rentabilidades netas actualizadas: ${data.annual.length} años, ` +
+      `${data.monthly.length} meses, ${data.volatility.length} de volatilidad.${missing}`
+    );
+  };
+
   const uploadRendimiento = async (f: File) => {
     const perfData = await processPerformanceExcel(f);
 
@@ -238,6 +272,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
       if (reportType === 'credito') message = await uploadCredito(file);
       else if (reportType === 'cambios') message = await uploadCambios(file);
       else if (reportType === 'contribuidores') message = await uploadContribuidores(file);
+      else if (reportType === 'rentabilidades') message = await uploadRentabilidades(file);
       else if (reportType === 'rendimiento') message = await uploadRendimiento(file);
       else message = await uploadHistoricalJson(file);
 
