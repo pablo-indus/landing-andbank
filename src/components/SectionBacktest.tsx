@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { globalSettings } from '../store';
-import { PROFILES, PROFILE_COLORS, PROFILE_KPIS, WINDOWS_DATA, HISTORICAL_VL } from '../data/portfolioData';
+import { PROFILES, PROFILE_COLORS, HISTORICAL_VL } from '../data/portfolioData';
 
 const TODAY = '2026-06-30';
 

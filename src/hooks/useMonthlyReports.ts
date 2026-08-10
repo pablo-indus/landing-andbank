@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
+import { PROFILES, PROFILE_COLORS, PROFILE_KPIS, WINDOWS_DATA } from '../data/portfolioData';
 
 /**
  * Fuente unica de datos para toda la landing.
@@ -56,6 +57,78 @@ const extractDateFromLabel = (label: string) => {
   };
 };
 
+/**
+ * Convierte la tabla de KPIs del libro AA al formato que usan los componentes.
+ *
+ * Los nombres de columna se buscan, no se fijan: la columna del mes cambia en
+ * cada cierre ("Junio", luego "Julio"...) y darla por fija obligaria a tocar el
+ * codigo todos los meses.
+ */
+function adaptKpis(kpis: any): typeof PROFILE_KPIS {
+  if (!kpis?.columns || !kpis?.rows) return PROFILE_KPIS;
+
+  const cols: string[] = kpis.columns;
+  const col2025 = cols.find((c) => c.trim() === '2025');
+  const col2026 = cols.find((c) => c.trim() === '2026');
+  const colVol = cols.find((c) => /volat/i.test(c));
+  // La columna del mes es la unica cuyo titulo es una palabra sin cifras.
+  const colMonth = cols.find((c) => /^[a-záéíóúñ]+$/i.test(c.trim()) && !/volat/i.test(c));
+
+  return PROFILES.map((name, i) => {
+    const row = kpis.rows[name];
+    const fallback = PROFILE_KPIS[i];
+    if (!row) return fallback;
+    const pick = (key: string | undefined, alt: number) =>
+      key && row[key] !== null && row[key] !== undefined ? row[key] : alt;
+
+    return {
+      ...fallback,
+      name: name as (typeof PROFILE_KPIS)[number]['name'],
+      color: PROFILE_COLORS[i],
+      p2025: pick(col2025, fallback.p2025),
+      p2026YTD: pick(col2026, fallback.p2026YTD),
+      pJune: pick(colMonth, fallback.pJune),
+      volatility: pick(colVol, fallback.volatility),
+    };
+  });
+}
+
+/**
+ * Convierte la tabla de ventanas al formato { cats, values[ventana][perfil] }.
+ *
+ * Solo se incluyen las ventanas que existen en el libro. La de "4 años" que
+ * habia en el codigo no esta en el archivo, asi que desaparece en lugar de
+ * mostrar una cifra sin respaldo. Conservador + y Agresivo + quedan a null en
+ * las ventanas largas: no tienen historico suficiente y un cero se leeria como
+ * un resultado real.
+ */
+function adaptWindows(windows: any): typeof WINDOWS_DATA {
+  if (!windows?.columns || !windows?.rows) return WINDOWS_DATA;
+
+  const find = (needle: string) =>
+    (windows.columns as string[]).find((c) => c.toLowerCase().includes(needle));
+
+  const spec: [string, string | undefined][] = [
+    ['1 año', find('1 año')],
+    ['2 años', find('2 años')],
+    ['3 años', find('3 años')],
+    ['5 años', find('5 años')],
+    ['Desde 2009', find('desde inicio')],
+  ];
+  const present = spec.filter((s): s is [string, string] => Boolean(s[1]));
+  if (present.length === 0) return WINDOWS_DATA;
+
+  return {
+    cats: present.map(([label]) => label),
+    values: present.map(([, col]) =>
+      PROFILES.map((p) => {
+        const v = windows.rows[p]?.[col];
+        return v === undefined ? null : v;
+      })
+    ),
+  };
+}
+
 export interface MonthlyReportsState {
   /** Todos los documentos de periodo, del mas reciente al mas antiguo. */
   reports: { id: string; data: any }[];
@@ -69,6 +142,10 @@ export interface MonthlyReportsState {
   performance: any | null;
   /** Series netas del libro AA (anual, mensual, volatilidad, KPIs). */
   returns: any | null;
+  /** KPIs por perfil, ya en el formato de los componentes. Cae a los estaticos. */
+  profileKpis: typeof PROFILE_KPIS;
+  /** Ventanas de rentabilidad anualizada. Cae a las estaticas. */
+  windows: typeof WINDOWS_DATA;
   /** Fecha de la ultima actualizacion registrada en la base de datos. */
   lastUpdated: Date | null;
   loading: boolean;
@@ -83,6 +160,8 @@ export function useMonthlyReports(): MonthlyReportsState {
     attributions: [],
     performance: null,
     returns: null,
+    profileKpis: PROFILE_KPIS,
+    windows: WINDOWS_DATA,
     lastUpdated: null,
     loading: true,
     error: null,
@@ -155,6 +234,8 @@ export function useMonthlyReports(): MonthlyReportsState {
           attributions,
           performance,
           returns,
+          profileKpis: adaptKpis(returns?.kpis),
+          windows: adaptWindows(returns?.windows),
           lastUpdated,
           loading: false,
           error: null,

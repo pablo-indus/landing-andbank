@@ -1,11 +1,13 @@
 import React from 'react';
-import { PROFILE_KPIS } from '../data/portfolioData';
+import { useMonthlyReports } from '../hooks/useMonthlyReports';
 
 export const KpiStrip: React.FC = () => {
+  const { profileKpis } = useMonthlyReports();
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-6 relative z-20">
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
-        {PROFILE_KPIS.map((kpi) => (
+        {profileKpis.map((kpi) => (
           <div
             key={kpi.name}
             className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg p-3.5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group"

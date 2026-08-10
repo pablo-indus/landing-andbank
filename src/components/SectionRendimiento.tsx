@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { PROFILES, PROFILE_COLORS, PROFILE_KPIS, WINDOWS_DATA } from '../data/portfolioData';
+import { PROFILES, PROFILE_COLORS } from '../data/portfolioData';
+import { useMonthlyReports } from '../hooks/useMonthlyReports';
 import { ScrollableTabs } from './ScrollableTabs';
 
 const BENCHMARK_DATA: Record<string, { bmk: string, YTD: number, '1Y': number, '3Y': number, '5Y': number, vol1Y: number, vol3Y: number, vol5Y: number }> = {
@@ -33,6 +34,10 @@ const PERIODS: { id: Period; label: string }[] = [
 ];
 
 export const SectionRendimiento: React.FC<{ forcedActiveIndices?: number[]; isPrintMode?: boolean }> = ({ forcedActiveIndices, isPrintMode }) => {
+  // Cifras netas de comisiones del libro AA. Si la base de datos aun no las
+  // tiene, el hook devuelve las estaticas y la seccion sigue funcionando.
+  const { profileKpis, windows } = useMonthlyReports();
+
   const [selectedPeriod, setSelectedPeriod] = useState<Period>('1Y');
   const [scatterPeriod, setScatterPeriod] = useState<Period>('1Y');
   const SCATTER_PERIODS: { id: Period; label: string }[] = [
@@ -71,15 +76,26 @@ export const SectionRendimiento: React.FC<{ forcedActiveIndices?: number[]; isPr
     updated[idx] = !updated[idx];
     setVisibleProfiles(updated);
   };
+  // Las ventanas se buscan por nombre, no por posicion. Antes se indexaba
+  // directamente (values[4] para 5 años, values[5] para desde 2009), lo que
+  // dependia de que la lista tuviera exactamente las seis entradas de entonces:
+  // al quitar la de "4 años" esos indices habrian pasado a apuntar a otra
+  // ventana sin que nada fallara visiblemente.
+  const emptyRow = PROFILES.map(() => null);
+  const windowRow = (label: string): (number | null)[] => {
+    const idx = windows.cats.indexOf(label);
+    return idx === -1 ? emptyRow : windows.values[idx];
+  };
+
   const getPeriodData = (period: Period): (number | null)[] => {
     switch (period) {
-      case 'YTD': return PROFILE_KPIS.map(p => p.p2026YTD);
-      case '2025': return PROFILE_KPIS.map(p => p.p2025);
-      case '1Y': return WINDOWS_DATA.values[0];
-      case '2Y': return WINDOWS_DATA.values[1];
-      case '3Y': return WINDOWS_DATA.values[2];
-      case '5Y': return WINDOWS_DATA.values[4];
-      case '2009': return WINDOWS_DATA.values[5];
+      case 'YTD': return profileKpis.map(p => p.p2026YTD);
+      case '2025': return profileKpis.map(p => p.p2025);
+      case '1Y': return windowRow('1 año');
+      case '2Y': return windowRow('2 años');
+      case '3Y': return windowRow('3 años');
+      case '5Y': return windowRow('5 años');
+      case '2009': return windowRow('Desde 2009');
     }
   };
   
@@ -387,7 +403,7 @@ export const SectionRendimiento: React.FC<{ forcedActiveIndices?: number[]; isPr
                     </text>
 
                     {/* Draw benchmarks */}
-                    {PROFILE_KPIS.map((kpi, idx) => {
+                    {profileKpis.map((kpi, idx) => {
                       if (!visibleProfiles[idx]) return null;
                       const p = kpi.name;
                       let benchRet = 0; let benchVol = 0;
@@ -421,11 +437,11 @@ export const SectionRendimiento: React.FC<{ forcedActiveIndices?: number[]; isPr
                     })}
 
                     {/* Draw portfolios */}
-                    {PROFILE_KPIS.map((kpi, idx) => {
+                    {profileKpis.map((kpi, idx) => {
                       if (!visibleProfiles[idx]) return null;
                       // the return for portfolios based on scatterPeriod:
-                      const periodIndex = scatterPeriod === '1Y' ? 0 : scatterPeriod === '3Y' ? 2 : scatterPeriod === '5Y' ? 4 : 0;
-                      const portRet = WINDOWS_DATA.values[periodIndex][idx] ?? 0;
+                      const scatterLabel = scatterPeriod === '3Y' ? '3 años' : scatterPeriod === '5Y' ? '5 años' : '1 año';
+                      const portRet = windowRow(scatterLabel)[idx] ?? 0;
                       const portVol = PORTFOLIO_VOL_DATA[kpi.name][scatterPeriod as '1Y'|'3Y'|'5Y'] ?? kpi.volatility;
                       const cx = 60 + (portVol / maxX) * 800;
                       const cy = 30 + 240 - (portRet / maxY) * 240;
@@ -533,7 +549,7 @@ export const SectionRendimiento: React.FC<{ forcedActiveIndices?: number[]; isPr
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
-                        {PROFILE_KPIS.map((kpi, idx) => {
+                        {profileKpis.map((kpi, idx) => {
                             const p = kpi.name;
                             let bmkName = '';
                             if (BENCHMARK_DATA[p]) {
