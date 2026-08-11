@@ -113,7 +113,7 @@ export const SectionCambios: React.FC<{ isPrintMode?: boolean }> = ({ isPrintMod
   // --- CONTROLES DE CARGA Y ERRORES ---
   if (loading) {
     return (
-      <section id="cambios" className={isPrintMode ? "" : "pt-10 scroll-mt-20"}>
+      <section id="cambios" className={isPrintMode ? "" : "pt-10 scroll-mt-28"}>
         <div className="flex items-center justify-center p-12 text-sm font-medium text-zinc-500 animate-pulse">
           Cargando base de datos...
         </div>
@@ -123,7 +123,7 @@ export const SectionCambios: React.FC<{ isPrintMode?: boolean }> = ({ isPrintMod
 
   if (error) {
     return (
-      <section id="cambios" className={isPrintMode ? "" : "pt-10 scroll-mt-20"}>
+      <section id="cambios" className={isPrintMode ? "" : "pt-10 scroll-mt-28"}>
         <div className="flex items-center justify-center p-12 text-sm font-bold text-red-500 bg-red-50 rounded-lg">
           {error}
         </div>
@@ -136,7 +136,7 @@ export const SectionCambios: React.FC<{ isPrintMode?: boolean }> = ({ isPrintMod
   }
 
   return (
-    <section id="cambios" className={isPrintMode ? "" : "pt-10 scroll-mt-20"}>
+    <section id="cambios" className={isPrintMode ? "" : "pt-10 scroll-mt-28"}>
       {!isPrintMode && (
         <div className="flex flex-col md:flex-row md:items-start justify-between border-b-2 border-zinc-900 pb-3 mb-6 gap-4">
           <div className="flex items-start gap-4">

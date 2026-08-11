@@ -1,0 +1,35 @@
+# Despliegue automatico en Netlify.
+#
+# Con este archivo en el repositorio, Netlify sabe como construir la web por su
+# cuenta: ya no hay que arrastrar la carpeta `dist` a mano. Cada `git push` a la
+# rama de produccion dispara un build y publica el resultado.
+#
+# Falta un paso que solo se puede dar desde el panel de Netlify, con la cuenta
+# del equipo: enlazar el sitio con el repositorio de GitHub y cargar las siete
+# variables `VITE_*`. Estan explicadas en `MODERNIZATION_PLAN.md`, seccion 4b.
+# Sin ellas el build sale sin configuracion de Firebase: la web cargaria con los
+# datos empaquetados y el panel de administracion no dejaria entrar.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  # Netlify cambia su version por defecto de vez en cuando y un salto de Node
+  # puede romper el build sin que nadie haya tocado el codigo. Mejor fijarla.
+  NODE_VERSION = "22"
+
+# La fuente va con nombre fijo y no cambia nunca, asi que se puede cachear a lo
+# bruto. Los `assets/` que genera Vite ya llevan hash en el nombre y Netlify los
+# cachea solo.
+[[headers]]
+  for = "/fonts/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# El HTML no se cachea: es lo que apunta al bundle nuevo despues de cada
+# despliegue, y si el navegador se queda con el viejo no ve los cambios.
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"

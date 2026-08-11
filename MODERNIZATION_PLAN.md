@@ -2,8 +2,9 @@
 
 Documento de traspaso. Si empiezas una conversacion nueva, lee SOLO este archivo:
 contiene el estado actual, lo que falta y las trampas ya descubiertas.
-Ultima actualizacion: 11 agosto 2026 (informe PDF rehecho: orden, paginacion propia,
-portada corporativa, siempre en claro, y logo).
+Ultima actualizacion: 11 agosto 2026 (cabecera, pie y estilo corporativos; ese mismo
+dia, antes, el informe PDF rehecho: orden, paginacion propia, portada corporativa,
+siempre en claro, y logo).
 
 ---
 
@@ -59,6 +60,10 @@ las dos como si fueran lo mismo ya ha causado un fallo (ver seccion 4).
 | Avisos de seguridad de npm | 0. `xlsx` viene de la distribucion oficial de SheetJS (0.20.3) y `nanoid` esta parcheado |
 | Informe PDF | Rehecho: A4 vertical, orden nuevo, paginacion propia, cabecera y pie con numero de hoja |
 | Logo | `public/logo.jpg`. El `logo.png` anterior estaba corrupto y nadie lo usa ya |
+| Estilo corporativo de la web | Cabecera, pie y portada rehechos. Paleta y tipografia unificadas en `index.css` |
+| Tipografia | IBM Plex Sans, servida desde `public/fonts/` (no desde Google). Licencia OFL incluida |
+| Logo sobre fondo oscuro | `public/logo-knockout.png`, la marca en blanco con fondo transparente |
+| Despliegue | `netlify.toml` en el repo. Falta enlazar el sitio con GitHub desde el panel |
 
 **Validaciones independientes que se pasaron** (no fiarse solo del mensaje verde):
 
@@ -96,9 +101,26 @@ Por orden de valor:
    Composicion y Asset Allocation siguen leyendo los datos empaquetados, que traen
    errores del pipeline antiguo (por ejemplo MERCHFONDO aparece con peso 0 en 51 de
    las 61 fechas). El parser nuevo lee esas celdas bien.
-2. **Fecha escrita a mano en la portada de la web**: `Hero.tsx:20` dice
-   "/ Julio 2026" a pelo, igual que le pasaba a la portada del PDF. Deberia
-   salir de `lastUpdated`, como ya hace el informe.
+2. **Cinco secciones no se enteran de una subida.** Una subida mensual actualiza
+   Rendimiento, KpiStrip, Cambios, Credito, Contribuidores, Composicion y Asset
+   Allocation. Las otras cinco leen de archivos del repo y solo cambian
+   reconstruyendo y desplegando:
+
+   | Seccion | De donde lee | Como se actualiza hoy |
+   |---|---|---|
+   | Backtest | `HISTORICAL_VL` (= `vlData.ts`) | `node scripts/generate-vldata.mjs "<VL>"` y desplegar |
+   | Drawdown | `HISTORICAL_VL` (= `vlData.ts`) | igual |
+   | Perfilador | `MAX_DD_HISTORY`, seis cifras en el propio componente | a mano en `SectionPerfilador.tsx:4` |
+   | Correlacion | `corrData.ts` | a mano; no hay parser ni tipo de subida |
+   | Style Box | `styleBoxData.ts` | a mano; no hay parser ni tipo de subida |
+
+   Ojo con el matiz: Backtest y Drawdown **si** pintan series reales —no son datos
+   inventados— pero son las del `vlData.ts` empaquetado, no las de Firestore. La
+   subida "Rendimientos (carteras y benchmarks)" escribe `performance_data`, que
+   hoy solo consume Rendimiento (volatilidades y grafico retorno/riesgo). Las
+   curvas de Backtest y Drawdown seguiran siendo las del ultimo `vlData.ts`
+   generado, aunque el mensaje verde de la subida diga que todo fue bien.
+
 3. **Bundle, lo que queda**: 2.939 kB, de los cuales 1,71 MB son
    `generatedData.ts`. Desde que Cambios, Credito, Contribuidores y Composicion
    leen de Firestore, ese archivo **ya solo sirve de respaldo** por si la base de
@@ -185,6 +207,25 @@ Por orden de valor:
   apuntaba a Wikipedia, el fallo se veia como "el logo es raro", no como "el
   logo esta roto". Ahora todo apunta a `public/logo.jpg` y no hay respaldo
   externo. El PNG corrupto sigue en el repo y no lo usa nadie: se puede borrar.
+- **El pie es negro en los dos temas, asi que su logo no depende del tema.** Un
+  JPG no tiene transparencia, asi que sobre fondo oscuro va `logo-knockout.png`
+  (la marca en blanco, generada desde el propio JPG). En la cabecera se elige con
+  `dark:`, porque la cabecera si cambia de color; en el pie **no**, porque el pie
+  es negro tambien en modo claro. Atarlo a `dark:` dejaba el JPG con su fondo
+  blanco incrustado pegado sobre el negro, con aspecto de pegatina, y solo se
+  veia en modo claro.
+- **Un `IntersectionObserver` montado con `[]` no ve nada si la pantalla de carga
+  esta puesta.** El observador que enciende la pestaña del menu se creaba en un
+  efecto con dependencias vacias, y en ese momento `loading` todavia era true: no
+  se pintaba ninguna seccion, `getElementById` devolvia null once veces y el
+  observador se quedaba observando la nada **para siempre**. La pestaña activa se
+  quedaba clavada en "Perfilador" hicieras lo que hicieras. Depende de
+  `loadingDb`. Ademas se marca la primera seccion visible en orden de documento,
+  no la ultima que avise: en un salto desde el menu entran varias en la franja a
+  la vez.
+- **`scroll-behavior: smooth` tambien afecta a `scrollIntoView`.** Comprobar la
+  pestaña activa justo despues de saltar da resultados falsos, porque la pagina
+  sigue moviendose. Hay que esperar a que pare (~1,5 s) antes de leer nada.
 - **Medir una tabla por trozos solo vale si las columnas van a ancho fijo.** La
   maqueta del PDF mide cada `<tbody>` para saber cuanto ocupa, pero un `<tbody>`
   medido suelto reparte las columnas segun su propio contenido y dentro de la
@@ -202,6 +243,20 @@ Por orden de valor:
   contenedor del grafico de drawdown tenia `dark:bg-zinc-800/50/30` (dos
   opacidades). En pantalla no se notaba y al imprimir salia un rectangulo negro
   tapando la curva entera.
+- **La tipografia de la web es tambien la del informe.** `PrintReportLayout` monta
+  su raiz con `font-sans`, y la maqueta **mide** la altura real de cada bloque para
+  repartirlos en hojas. Cambiar `--font-sans` en `index.css` cambia esas medidas, y
+  con ellas la paginacion, sin que nada se queje: el informe sale igual de bonito
+  pero con una hoja mas o con un grafico separado de su tabla. Al tocar la
+  tipografia hay que volver a contar hojas —`node scripts/print-pdf.mjs 2` da 4 y
+  `node scripts/print-pdf.mjs 0,1,2,3,4,5` da 6— y comprobar que ninguna
+  `.report-page` se pasa de su alto (271 mm = 1.024 px; si el bloque no cabe, el
+  div crece y el navegador parte la hoja).
+- **El alto de la cabecera esta escrito en tres sitios.** La cabecera son dos
+  bandas (64 + 44 px). Ese numero se repite en la clase `scroll-mt-28` de cada
+  seccion y en el `rootMargin` del `IntersectionObserver` de `App.tsx`. Si crece la
+  cabecera y no se mueven los otros dos, los enlaces del menu dejan el titulo
+  tapado y la pestaña activa se enciende una seccion antes de tiempo.
 - **`vlData.ts` y `generatedData.ts` son necesarios**, aunque parezcan huerfanos:
   `portfolioData.ts` los importa. `vlData.ts` son 1,2 MB en una sola linea, por eso
   `wc -l` dice 0. **No abrirlos enteros** (gasta muchisimo contexto).
@@ -219,7 +274,17 @@ Por orden de valor:
   `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`,
   `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID` y
   `VITE_ADMIN_EMAIL` (estan en el `.env` local y en `.env.example` sin valores).
-- Build: `npm run build`, carpeta publicada `dist`.
+- Build: `npm run build`, carpeta publicada `dist`. La configuracion esta en
+  `netlify.toml` (comando, carpeta, Node 22 fijado y cabeceras de cache), asi que
+  no hay que repetirla en el panel.
+- **Para que el despliegue sea automatico** falta un paso que solo se puede dar
+  desde el panel de Netlify: *Site configuration -> Build & deploy -> Link
+  repository*, elegir `pablo-indus/landing-andbank` y la rama de produccion. Con
+  el sitio enlazado, cada `git push` construye y publica solo; sin enlazar, sigue
+  publicandose lo que se arrastre a mano y `netlify.toml` no hace nada.
+- Al enlazarlo hay que cargar las siete variables `VITE_*` en *Environment
+  variables*. Arrastrando la carpeta no hacian falta, porque el build salia del
+  portatil con su `.env`; construyendo en Netlify, si.
 
 ---
 

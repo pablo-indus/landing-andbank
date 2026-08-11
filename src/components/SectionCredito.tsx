@@ -51,8 +51,8 @@ export const SectionCredito: React.FC<{ isPrintMode?: boolean }> = ({ isPrintMod
     }
   }, [snapshots]);
 
-  if (loading) return <section id="credito" className={isPrintMode ? "" : "pt-10 scroll-mt-20 mb-12"}><div className="flex items-center justify-center p-12 text-sm font-medium text-zinc-500 animate-pulse">Cargando métricas de crédito...</div></section>;
-  if (error || snapshots.length === 0) return <section id="credito" className={isPrintMode ? "" : "pt-10 scroll-mt-20 mb-12"}><div className="flex items-center justify-center p-12 text-sm font-bold text-red-500 bg-red-50 rounded-lg">{error || "No hay datos disponibles."}</div></section>;
+  if (loading) return <section id="credito" className={isPrintMode ? "" : "pt-10 scroll-mt-28 mb-12"}><div className="flex items-center justify-center p-12 text-sm font-medium text-zinc-500 animate-pulse">Cargando métricas de crédito...</div></section>;
+  if (error || snapshots.length === 0) return <section id="credito" className={isPrintMode ? "" : "pt-10 scroll-mt-28 mb-12"}><div className="flex items-center justify-center p-12 text-sm font-bold text-red-500 bg-red-50 rounded-lg">{error || "No hay datos disponibles."}</div></section>;
 
   const snapshot = snapshots.find((s) => (s.period + '_' + s.label) === activePeriod) || snapshots[0];
   const validFunds = snapshot.funds.filter((fund: any) => fund.ytw !== 0 || fund.duration !== 0 || fund.pctIG !== 0 || fund.pctHY !== 0 || (fund.rating && fund.rating !== '-'));
@@ -85,7 +85,7 @@ export const SectionCredito: React.FC<{ isPrintMode?: boolean }> = ({ isPrintMod
   }, {});
 
   return (
-    <section id="credito" className={isPrintMode ? "" : "pt-10 scroll-mt-20 mb-12"}>
+    <section id="credito" className={isPrintMode ? "" : "pt-10 scroll-mt-28 mb-12"}>
       <div className="flex items-start gap-4 border-b-2 border-zinc-900 pb-3 mb-6">
         <span className="text-xs font-bold text-red-600 tracking-widest uppercase pt-1">09</span>
         <div>

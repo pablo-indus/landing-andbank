@@ -1,13 +1,45 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Mandatos Portfolio Funds</title>
+
+    <!--
+      La fuente se pide cuanto antes: es la del texto y tambien la que usa el
+      informe para medir sus bloques antes de repartirlos en hojas.
+    -->
+    <link
+      rel="preload"
+      href="/fonts/ibm-plex-sans-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+
+    <script>
+      /*
+        El tema se aplica antes de pintar nada.
+
+        Antes lo ponia un efecto de React dentro de la cabecera, que corre
+        despues del primer pintado y despues de la pantalla de carga: quien
+        tuviera el modo oscuro se comia un fogonazo blanco en cada recarga.
+        Aqui solo se decide la clase; el boton de la cabecera sigue mandando
+        sobre ella.
+      */
+      try {
+        var stored = localStorage.getItem('theme');
+        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (stored === 'dark' || (stored === null && prefersDark)) {
+          document.documentElement.classList.add('dark');
+        }
+      } catch (e) {
+        /* localStorage bloqueado: se queda en claro, que es el tema por defecto. */
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

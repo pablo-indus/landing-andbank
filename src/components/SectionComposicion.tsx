@@ -33,7 +33,7 @@ export const SectionComposicion: React.FC<{ forcedActiveIndices?: number[]; isPr
   });
 
   return (
-    <section id="composicion" className={isPrintMode ? "" : "pt-10 scroll-mt-20"}>
+    <section id="composicion" className={isPrintMode ? "" : "pt-10 scroll-mt-28"}>
       {!isPrintMode && (
       <div className="flex items-start gap-4 border-b-2 border-zinc-900 pb-3 mb-6">
         <span className="text-xs font-bold text-red-600 tracking-widest uppercase pt-1">

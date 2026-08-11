@@ -1,9 +1,73 @@
-@import url('https://fonts.googleapis.com/css2?family=Verdana:wght@400;700&display=swap');
 @import "tailwindcss";
 @custom-variant dark (&:is(.dark *));
 
-html {  scroll-behavior: smooth;}
-body {  font-family: Verdana, Geneva, sans-serif;}
+/*
+  Identidad corporativa.
+
+  El rojo sale del propio logo (`public/logo.jpg`): sus pixeles rojos son
+  rgb(226, 20, 40). Antes cada componente escribia el suyo a mano —`red-600`,
+  `red-700`, `#E32119`— y no habia dos iguales en toda la web.
+
+  El `@import` de Google Fonts que habia aqui pedia "Verdana", que no es una
+  fuente de Google: devolvia 400 en cada carga y no aportaba nada, porque
+  Verdana ya venia del sistema. La pila de ahora tampoco descarga nada.
+
+  Cuidado al tocar `--font-sans`: el informe tambien la usa. `PrintReportLayout`
+  monta su raiz con `font-sans` y **mide** la altura real de cada bloque para
+  repartirlos en hojas, asi que un cambio de tipografia puede mover la
+  paginacion. Despues de tocarla hay que pasar `node scripts/print-pdf.mjs` y
+  comprobar que el numero de hojas sigue siendo el de siempre: 4 con un perfil
+  y 6 con los seis.
+*/
+/*
+  IBM Plex Sans, servida desde el propio dominio (`public/fonts/`).
+
+  No se pide a Google. Una peticion externa vuelve a meter la clase de
+  dependencia que ya dio problemas con el logo, y sobre todo el informe se
+  imprime con un Chrome sin ventana que **mide** los bloques antes de repartirlos
+  en hojas: si la fuente llegase tarde, mediria con la de respaldo y la
+  paginacion saldria descuadrada.
+
+  Es una fuente variable, asi que un solo archivo por subconjunto cubre de 100 a
+  700. Solo se guardan los dos subconjuntos latinos; los cirilicos, griegos y
+  vietnamitas que sirve Google no pintan nada aqui.
+
+  Licencia SIL OFL 1.1, texto completo en `public/fonts/OFL.txt`.
+*/
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-sans-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-sans-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@theme {
+  --color-brand: #e21428;
+  --color-brand-dark: #a80f1e;
+  --color-brand-tint: #fdf1f3;
+  --color-ink: #17181c;
+  --color-ink-soft: #26282f;
+
+  --font-sans: 'IBM Plex Sans', 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+}
+
+html { scroll-behavior: smooth; }
+body { font-family: var(--font-sans); }
 
 /*
   Maqueta del informe. La pagina es A4 vertical con 12 mm de margen, asi que la

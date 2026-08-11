@@ -8,18 +8,29 @@ interface HeaderProps {
   activeSection: string;
 }
 
+/*
+  Cabecera corporativa en dos bandas: identidad y acciones arriba, navegacion
+  debajo.
+
+  Antes iba todo en una sola fila de 64 px, asi que las once secciones se
+  repartian el hueco que sobraba entre el logo y los botones: por debajo de
+  unos 1.100 px de ancho la navegacion se quedaba en una pestaña y una flecha.
+  Con banda propia, las pestañas disponen de todo el ancho.
+
+  Si cambia el alto total (64 + 44 = 108 px), hay que mover con el la clase
+  `scroll-mt-28` de las secciones y el `rootMargin` del observador de `App.tsx`,
+  o los enlaces del menu dejan el titulo tapado bajo la cabecera.
+*/
 export const Header: React.FC<HeaderProps> = ({ activeSection }) => {
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [adminModalOpen, setAdminModalOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
 
+  // La clase `dark` ya la ha puesto el script de `index.html` antes del primer
+  // pintado, asi que aqui solo hay que leerla. Decidirlo otra vez seria repetir
+  // la regla en dos sitios y arriesgarse a que dejen de coincidir.
   useEffect(() => {
-    const isDark = localStorage.getItem('theme') === 'dark' || 
-                   (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-      setDarkMode(true);
-    }
+    setDarkMode(document.documentElement.classList.contains('dark'));
   }, []);
 
   const toggleDarkMode = () => {
@@ -47,7 +58,7 @@ export const Header: React.FC<HeaderProps> = ({ activeSection }) => {
 
   useEffect(() => {
     checkScroll();
-    
+
     let observer: ResizeObserver | null = null;
     if (navRef.current) {
         observer = new ResizeObserver(() => {
@@ -55,11 +66,11 @@ export const Header: React.FC<HeaderProps> = ({ activeSection }) => {
         });
         observer.observe(navRef.current);
     }
-    
+
     window.addEventListener('resize', checkScroll);
     // Also re-check after fonts load
     document.fonts?.ready.then(checkScroll);
-    
+
     return () => {
       window.removeEventListener('resize', checkScroll);
       if (observer) observer.disconnect();
@@ -91,91 +102,136 @@ export const Header: React.FC<HeaderProps> = ({ activeSection }) => {
     { id: 'stylebox', label: 'Style Box' },
   ];
 
+  const iconButton =
+    'cursor-pointer flex items-center justify-center w-9 h-9 rounded-sm border border-zinc-200 ' +
+    'dark:border-zinc-700 text-zinc-500 dark:text-zinc-400 hover:text-ink dark:hover:text-white ' +
+    'hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors shrink-0';
+
   return (
-    <header className="sticky top-0 z-50 bg-white dark:bg-zinc-900/95 backdrop-blur border-b border-zinc-200 dark:border-zinc-700 shadow-sm">
+    <header className="sticky top-0 z-50 bg-white dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800 shadow-sm">
+      {/* Banda 1: identidad y acciones */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          {/* Logo mark */}
-          <div className="flex items-center">
-            {/*
-              El logo es public/logo.jpg. Antes apuntaba a un logo.png que era
-              este mismo JPG guardado como texto: el navegador no podia
-              decodificarlo y caia en una imagen de Wikipedia, que es de un
-              tercero y ademas no carga sin internet.
-            */}
-            <img src="/logo.jpg" alt="Andbank" className="h-8 object-contain" />
-          </div>
-          <div className="hidden sm:block ml-2 border-l border-zinc-200 dark:border-zinc-700 pl-4">
-            <p className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium uppercase tracking-wider mt-1">
+        <div className="flex items-center gap-4 min-w-0">
+          {/*
+            El logo es public/logo.jpg. Antes apuntaba a un logo.png que era
+            este mismo JPG guardado como texto: el navegador no podia
+            decodificarlo y caia en una imagen de Wikipedia, que es de un
+            tercero y ademas no carga sin internet.
+
+            Un JPG no tiene transparencia, asi que en oscuro se cambia por
+            `logo-knockout.png`, la misma marca en blanco y con fondo
+            transparente, generada desde este archivo. Antes se resolvia con una
+            placa blanca detras, que sobre una barra oscura parecia una pegatina.
+            Los dos llevan `alt`: el que sobra va con `display:none` y no lo
+            anuncia ningun lector de pantalla.
+          */}
+          <img src="/logo.jpg" alt="Andbank" className="h-7 object-contain shrink-0 dark:hidden" />
+          <img
+            src="/logo-knockout.png"
+            alt="Andbank"
+            className="h-7 object-contain shrink-0 hidden dark:block"
+          />
+
+          <div className="hidden sm:block border-l border-zinc-200 dark:border-zinc-800 pl-4 min-w-0">
+            <p className="text-[11px] font-semibold text-ink dark:text-zinc-100 truncate">
               Mandatos Portfolio Funds (&lt;1MM €)
+            </p>
+            <p className="text-[10px] text-zinc-500 dark:text-zinc-500 truncate mt-0.5">
+              Wealth Management SGIIC · Carteras modelo
             </p>
           </div>
         </div>
 
-        {/* Navigation */}
-        <div className="flex items-center flex-1 min-w-0 mx-2 sm:mx-4 relative overflow-hidden group">
-          {showLeftArrow && (
-            <button 
-              onClick={() => scrollNav('left')}
-              className="absolute left-0 z-10 p-1 bg-gradient-to-r from-white dark:from-zinc-900 via-white dark:via-zinc-900 to-transparent pr-4 h-full flex items-center cursor-pointer text-zinc-400 hover:text-zinc-800 dark:text-zinc-200 transition-colors"
-            >
-              <ChevronLeft size={18} />
-            </button>
-          )}
-          
-          <nav 
-            ref={navRef}
-            onScroll={checkScroll}
-            className="flex items-center gap-1 overflow-x-auto py-1 no-scrollbar w-full scroll-smooth"
-            style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={toggleDarkMode}
+            className={iconButton}
+            title={darkMode ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+            aria-label={darkMode ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
           >
-            {navItems.map((item) => {
-              const isActive = activeSection === item.id;
-              return (
-                <a
-                  key={item.id}
-                  href={`#${item.id}`}
-                  onClick={() => {
-                    setTimeout(() => {
-                      const el = document.getElementById(item.id);
-                      if (el) el.scrollIntoView({ behavior: 'smooth' });
-                    }, 0);
-                  }}
-                  className={`text-[10px] font-bold tracking-wider uppercase px-3 py-2 rounded-full transition-all whitespace-nowrap border ${
-                    isActive
-                      ? 'bg-zinc-900 text-white border-zinc-900 shadow-sm'
-                      : 'bg-white dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:text-zinc-900 dark:text-zinc-100 hover:bg-zinc-50 dark:bg-zinc-800/50'
-                  }`}
-                >
-                  {item.label}
-                </a>
-              );
-            })}
-          </nav>
-          
-          {showRightArrow && (
-            <button 
-              onClick={() => scrollNav('right')}
-              className="absolute right-0 z-10 p-1 bg-gradient-to-l from-white dark:from-zinc-900 via-white dark:via-zinc-900 to-transparent pl-4 h-full flex items-center cursor-pointer text-zinc-400 hover:text-zinc-800 dark:text-zinc-200 transition-colors"
-            >
-              <ChevronRight size={18} />
-            </button>
-          )}
+            {darkMode ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+          <button
+            onClick={() => setAdminModalOpen(true)}
+            className={iconButton}
+            title="Panel de administración"
+            aria-label="Panel de administración"
+          >
+            <Settings size={16} />
+          </button>
+          <button
+            onClick={() => setPdfModalOpen(true)}
+            className="cursor-pointer flex items-center gap-2 h-9 px-3.5 bg-brand text-white rounded-sm text-[11px] font-bold uppercase tracking-wider hover:bg-brand-dark transition-colors shrink-0"
+          >
+            <FileText size={14} />
+            <span className="hidden sm:inline">Generar </span>PDF
+          </button>
         </div>
-                <button onClick={toggleDarkMode} className="cursor-pointer flex items-center justify-center w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors ml-2 shrink-0">
-          {darkMode ? <Sun size={16} /> : <Moon size={16} />}
-        </button>
-        <button onClick={() => setAdminModalOpen(true)} className="cursor-pointer flex items-center justify-center w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors ml-2 shrink-0">
-          <Settings size={16} />
-        </button>
-        <button onClick={() => setPdfModalOpen(true)} className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 text-white rounded text-[11px] font-bold uppercase tracking-wider hover:bg-zinc-800 transition-colors ml-2 shrink-0">
-          <FileText size={14} /> PDF
-        </button>
       </div>
-          {pdfModalOpen && <PdfExportModal onClose={() => setPdfModalOpen(false)} onPrint={(profiles) => {
-          setPdfModalOpen(false);
-          window.dispatchEvent(new CustomEvent('generate-pdf', { detail: profiles }));
-        }} />}
+
+      {/* Banda 2: navegacion. Pestañas subrayadas, no pastillas. */}
+      <div className="border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="relative overflow-hidden">
+            {showLeftArrow && (
+              <button
+                onClick={() => scrollNav('left')}
+                className="absolute left-0 z-10 h-full pr-6 flex items-center cursor-pointer text-zinc-400 hover:text-ink dark:hover:text-white transition-colors bg-gradient-to-r from-zinc-50 dark:from-zinc-900 via-zinc-50 dark:via-zinc-900 to-transparent"
+                aria-label="Desplazar la navegación a la izquierda"
+              >
+                <ChevronLeft size={18} />
+              </button>
+            )}
+
+            <nav
+              ref={navRef}
+              onScroll={checkScroll}
+              className="flex items-stretch gap-1 overflow-x-auto no-scrollbar w-full scroll-smooth"
+              style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}
+            >
+              {navItems.map((item) => {
+                const isActive = activeSection === item.id;
+                return (
+                  <a
+                    key={item.id}
+                    href={`#${item.id}`}
+                    aria-current={isActive ? 'page' : undefined}
+                    onClick={() => {
+                      setTimeout(() => {
+                        const el = document.getElementById(item.id);
+                        if (el) el.scrollIntoView({ behavior: 'smooth' });
+                      }, 0);
+                    }}
+                    className={`relative shrink-0 h-11 px-3.5 flex items-center text-[10px] font-bold uppercase tracking-wider whitespace-nowrap transition-colors ${
+                      isActive
+                        ? 'text-ink dark:text-white'
+                        : 'text-zinc-500 dark:text-zinc-400 hover:text-ink dark:hover:text-zinc-100'
+                    }`}
+                  >
+                    {item.label}
+                    {isActive && <span className="absolute inset-x-2 bottom-0 h-[3px] bg-brand" />}
+                  </a>
+                );
+              })}
+            </nav>
+
+            {showRightArrow && (
+              <button
+                onClick={() => scrollNav('right')}
+                className="absolute right-0 z-10 h-full pl-6 flex items-center cursor-pointer text-zinc-400 hover:text-ink dark:hover:text-white transition-colors bg-gradient-to-l from-zinc-50 dark:from-zinc-900 via-zinc-50 dark:via-zinc-900 to-transparent"
+                aria-label="Desplazar la navegación a la derecha"
+              >
+                <ChevronRight size={18} />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {pdfModalOpen && <PdfExportModal onClose={() => setPdfModalOpen(false)} onPrint={(profiles) => {
+        setPdfModalOpen(false);
+        window.dispatchEvent(new CustomEvent('generate-pdf', { detail: profiles }));
+      }} />}
       {adminModalOpen && <AdminModal onClose={() => setAdminModalOpen(false)} />}
     </header>
   );

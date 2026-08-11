@@ -311,7 +311,7 @@ export const SectionBacktest: React.FC<{ forcedProfileIndices?: number[]; isPrin
   const getY = (v: number) => M.t + ih - ((v - lo) / (hi - lo || 1)) * ih;
 
   return (
-    <section id="simulador" className={isPrintMode ? "" : "pt-10 scroll-mt-20"}>
+    <section id="simulador" className={isPrintMode ? "" : "pt-10 scroll-mt-28"}>
       {/* En el PDF el titulo lo pone la maqueta del informe, no la seccion. */}
       {!isPrintMode && (
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">

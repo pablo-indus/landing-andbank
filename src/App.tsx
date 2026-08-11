@@ -49,6 +49,15 @@ export default function App() {
   const [activeSection, setActiveSection] = useState<string>('perfilador');
 
   useEffect(() => {
+    /*
+      Mientras `loadingDb` es true se pinta la pantalla de carga y ninguna
+      seccion existe todavia. Este efecto llevaba `[]`, asi que corria una sola
+      vez en ese momento, no encontraba ningun elemento y se quedaba observando
+      la nada: la pestaña activa se quedaba clavada en "Perfilador" pasara lo
+      que pasara. Por eso depende de `loadingDb` y espera a que haya datos.
+    */
+    if (loadingDb) return;
+
     const sectionIds = [
       'perfilador',
       'rendimiento',
@@ -63,15 +72,23 @@ export default function App() {
       'stylebox',
     ];
 
+    // Se marca la primera seccion visible en orden de documento, no la ultima
+    // que avise: al saltar desde el menu entran varias en la franja a la vez, y
+    // la que manda es la de arriba.
+    const visible = new Set<string>();
+
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            setActiveSection(entry.target.id);
-          }
+          if (entry.isIntersecting) visible.add(entry.target.id);
+          else visible.delete(entry.target.id);
         });
+        const topmost = sectionIds.find((id) => visible.has(id));
+        if (topmost) setActiveSection(topmost);
       },
-      { rootMargin: '-80px 0px -60% 0px' }
+      // El margen superior es el alto de la cabecera fija (64 + 44 px): sin el,
+      // la seccion que hay debajo de ella se marca como activa antes de verse.
+      { rootMargin: '-112px 0px -60% 0px' }
     );
 
     sectionIds.forEach((id) => {
@@ -90,7 +107,7 @@ export default function App() {
       observer.disconnect();
       window.removeEventListener('scroll', handleScroll);
     };
-  }, []);
+  }, [loadingDb]);
 
   // 3. Loading Screen (Prevents rendering the app before data arrives)
   if (loadingDb) {
@@ -114,7 +131,7 @@ export default function App() {
           <Header activeSection={activeSection} />
 
           {/* Hero Section */}
-          <Hero />
+          <Hero lastUpdated={lastUpdated} />
 
           {/* KPI Overview Strip */}
           <KpiStrip />
@@ -165,7 +182,7 @@ export default function App() {
           </main>
 
           {/* Corporate Footer at the bottom */}
-          <Footer />
+          <Footer lastUpdated={lastUpdated} />
         </>
       )}
     </div>

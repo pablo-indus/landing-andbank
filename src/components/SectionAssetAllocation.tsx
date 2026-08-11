@@ -29,7 +29,7 @@ export const SectionAssetAllocation: React.FC<{ forcedActiveIndices?: number[]; 
         return snapshot.rows.some(row => row.isPct !== null && row.values[pIdx] !== null && row.values[pIdx] !== undefined && row.values[pIdx] !== 0);
       });
   return (
-    <section id="aa-global" className={isPrintMode ? "" : "pt-10 scroll-mt-20"}>
+    <section id="aa-global" className={isPrintMode ? "" : "pt-10 scroll-mt-28"}>
       {!isPrintMode && (
       <div className="flex items-start gap-4 border-b-2 border-zinc-900 pb-3 mb-6">
         <span className="text-xs font-bold text-red-600 tracking-widest uppercase pt-1">
