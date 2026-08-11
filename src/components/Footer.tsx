@@ -7,9 +7,7 @@ export const Footer: React.FC = () => {
         <div className="flex flex-col sm:flex-row items-center sm:items-end gap-3 sm:gap-6">
           {/* Logo mark */}
           <div className="flex items-center bg-white dark:bg-zinc-900 p-2 rounded">
-            <img src="/logo.png" alt="Andbank" className="h-8 object-contain" onError={(e) => {
-              (e.target as HTMLImageElement).src = 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/ec/Andbank_logo.png/320px-Andbank_logo.png';
-            }} />
+            <img src="/logo.jpg" alt="Andbank" className="h-8 object-contain" />
           </div>
           <div className="text-center sm:text-left mb-2">
             <div className="font-bold uppercase text-zinc-200 tracking-wide text-[11px]">

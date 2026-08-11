@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ASSET_ALLOCATION_SNAPSHOTS, PROFILES, PROFILE_COLORS } from '../data/portfolioData';
+import { PROFILES, PROFILE_COLORS } from '../data/portfolioData';
+import { useMonthlyReports } from '../hooks/useMonthlyReports';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { ScrollableTabs } from './ScrollableTabs';
 
@@ -13,13 +14,13 @@ export const SectionAssetAllocation: React.FC<{ forcedActiveIndices?: number[]; 
     if (l.includes('alternativos')) return '#800020';
     return '#9CA3AF';
 };
-  const [activePeriod, setActivePeriod] = useState<string>(
-    ASSET_ALLOCATION_SNAPSHOTS[0].period
-  );
+  const { assetAllocation } = useMonthlyReports();
+  // Null hasta que el usuario elige: la lista de periodos cambia cuando llega el
+  // dato de Firestore y un periodo fijado de inicio podria no existir en ella.
+  const [activePeriod, setActivePeriod] = useState<string | null>(null);
 
   const snapshot =
-    ASSET_ALLOCATION_SNAPSHOTS.find((s) => s.period === activePeriod) ||
-    ASSET_ALLOCATION_SNAPSHOTS[0];
+    assetAllocation.find((s) => s.period === activePeriod) || assetAllocation[0];
 
 
   const activeProfileIndices = forcedActiveIndices !== undefined && forcedActiveIndices.length > 0 
@@ -49,8 +50,8 @@ export const SectionAssetAllocation: React.FC<{ forcedActiveIndices?: number[]; 
         {/* Time Snapshot Tabs */}
         {!isPrintMode && (
         <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-zinc-100">
-          {ASSET_ALLOCATION_SNAPSHOTS.map((snap) => {
-            const isActive = snap.period === activePeriod;
+          {assetAllocation.map((snap) => {
+            const isActive = snap.period === snapshot?.period;
             return (
               <button
                 key={snap.period}

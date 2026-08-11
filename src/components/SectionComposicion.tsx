@@ -1,10 +1,15 @@
 import React, { useState } from 'react';
-import { COMPOSITION_SNAPSHOTS, PROFILES } from '../data/portfolioData';
+import { PROFILES } from '../data/portfolioData';
+import { useMonthlyReports } from '../hooks/useMonthlyReports';
 import { ScrollableTabs } from './ScrollableTabs';
 
 export const SectionComposicion: React.FC<{ forcedActiveIndices?: number[]; isPrintMode?: boolean }> = ({ forcedActiveIndices, isPrintMode }) => {
+  const { composition } = useMonthlyReports();
   const [profileIdxState, setProfileIdx] = useState<number>(2);
-  const [activePeriod, setActivePeriod] = useState<string>(COMPOSITION_SNAPSHOTS[0].period);
+  // Null hasta que el usuario elige: la lista puede cambiar cuando llega el dato
+  // de Firestore, y fijar el periodo inicial dejaria seleccionada una fecha que
+  // ya no esta en las pestañas.
+  const [activePeriod, setActivePeriod] = useState<string | null>(null);
     React.useEffect(() => {
     const handleApply = (e: any) => setProfileIdx(e.detail);
     window.addEventListener('apply-profile', handleApply);
@@ -13,7 +18,7 @@ export const SectionComposicion: React.FC<{ forcedActiveIndices?: number[]; isPr
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
 
   const snapshot =
-    COMPOSITION_SNAPSHOTS.find((s) => s.period === activePeriod) || COMPOSITION_SNAPSHOTS[0];
+    composition.find((s) => s.period === activePeriod) || composition[0];
 
   const toggleCategory = (catName: string) => {
     setCollapsedCategories((prev) => ({
@@ -50,8 +55,8 @@ export const SectionComposicion: React.FC<{ forcedActiveIndices?: number[]; isPr
         {!isPrintMode && (
           <div className="border-b border-zinc-100 pb-2">
             <ScrollableTabs 
-              tabs={COMPOSITION_SNAPSHOTS.map(s => ({ id: s.period, label: s.label }))} 
-              activeTab={activePeriod} 
+              tabs={composition.map(s => ({ id: s.period, label: s.label }))}
+              activeTab={snapshot?.period ?? ''}
               onTabChange={(id) => setActivePeriod(id)}
               baseClass="px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all whitespace-nowrap cursor-pointer"
               activeClass="bg-red-700 text-white shadow-xs"

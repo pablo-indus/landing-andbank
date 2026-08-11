@@ -100,7 +100,7 @@ const trajectories = useMemo(() => {
 
   // SVG Chart Dimensions
   const W = 900;
-  const H = isPrintMode ? 280 : 350;
+  const H = isPrintMode ? 255 : 350;
   const M = { t: 20, r: 40, b: 60, l: 60 };
   const iw = W - M.l - M.r;
   const ih = H - M.t - M.b;
@@ -199,7 +199,7 @@ const trajectories = useMemo(() => {
       </div>
 )}
 
-      <div className={`bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg ${isPrintMode ? "p-2 space-y-3" : "p-5 shadow-sm space-y-6"}`}>
+      <div className={`bg-white dark:bg-zinc-900 ${isPrintMode ? "space-y-2" : "border border-zinc-200 dark:border-zinc-700 rounded-lg p-5 shadow-sm space-y-6"}`}>
         {/* Profile Toggles or Legend */}
         {isPrintMode ? (
           <div className="flex flex-wrap gap-4 mb-2 justify-center">
@@ -266,7 +266,12 @@ const trajectories = useMemo(() => {
         )}
 
         {/* SVG Chart */}
-        <div className="relative w-full overflow-hidden border border-zinc-100 rounded-lg bg-zinc-50 dark:bg-zinc-800/50/30">
+        {/*
+          En el PDF el grafico va sin fondo: la clase `dark:bg-zinc-800/50/30`
+          esta mal escrita (dos opacidades) y al imprimir salia un rectangulo
+          negro tapando toda la curva.
+        */}
+        <div className={`relative w-full overflow-hidden rounded-lg ${isPrintMode ? "border border-zinc-200" : "border border-zinc-100 bg-zinc-50 dark:bg-zinc-800/50"}`}>
           <svg
             className="w-full h-auto overflow-visible select-none"
             viewBox={`0 0 ${W} ${H}`}
@@ -456,9 +461,12 @@ const trajectories = useMemo(() => {
         </div>
       </div>
 
-        <div className="mt-4 text-[9px] font-medium text-zinc-400 text-left border-t border-zinc-100 pt-3">
-          * Retornos históricos de clientes reales, netos de cualquier comisión aplicable (gestión, custodia, etc).
-        </div>
+        {/* En el PDF el descargo va una sola vez, en el pie de cada hoja. */}
+        {!isPrintMode && (
+          <div className="mt-4 text-[9px] font-medium text-zinc-400 text-left border-t border-zinc-100 pt-3">
+            * Retornos históricos de clientes reales, netos de cualquier comisión aplicable (gestión, custodia, etc).
+          </div>
+        )}
     </section>
   );
 };

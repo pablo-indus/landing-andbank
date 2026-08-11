@@ -88,20 +88,16 @@ cats.forEach((cat, ci) => {
   });
 });
 
-// ------------------------------------------------- PORTFOLIO_VOL_DATA (Rendimiento)
-console.log('\n=============== PORTFOLIO_VOL_DATA vs volatilidad del Excel ===============');
-const volBlock = rend.match(/const PORTFOLIO_VOL_DATA[\s\S]*?\n\};/)?.[0] ?? '';
-const volRows = [...volBlock.matchAll(/'([^']+)':\s*\{\s*'1Y':\s*(-?[\d.]+),\s*'3Y':\s*(-?[\d.]+),\s*'5Y':\s*(-?[\d.]+)/g)];
-const lastVol = data.volatility.at(-1);
-console.log(`(el Excel solo da volatilidad puntual; se compara 1Y contra ${lastVol?.period})`);
-console.log('perfil           1Y codigo  1Y excel  estado');
-for (const m of volRows) {
-  const [, name, v1] = m;
-  const excel = lastVol?.byProfile[name];
-  const ok = near(+v1, excel, 0.3);
-  if (!ok && excel !== undefined) issues++;
-  console.log(`  ${name.padEnd(15)}${fmt(+v1)}   ${fmt(excel)}   ${excel === undefined ? '(sin dato en Excel)' : ok ? 'coincide' : '*** DIFIERE ***'}`);
-}
+// -------------------------------------------- volatilidades de SectionRendimiento
+// Ya no hay tablas escritas a mano en esa seccion: la volatilidad de las carteras y
+// todo lo de los benchmarks sale de las series VL. Lo comprueba audit-benchmarks.ts,
+// que compara tres lecturas distintas del mismo Excel.
+console.log('\n=============== SectionRendimiento ===============');
+const stale = /BENCHMARK_DATA|PORTFOLIO_VOL_DATA/.test(rend);
+if (stale) issues++;
+console.log(stale
+  ? '  *** han vuelto a aparecer tablas escritas a mano en SectionRendimiento.tsx ***'
+  : '  sin cifras escritas a mano (ver: node scripts/audit-benchmarks.ts "<VL>")');
 
 console.log('\n====================================================');
 console.log(issues === 0 ? 'Sin discrepancias.' : `${issues} discrepancias detectadas.`);

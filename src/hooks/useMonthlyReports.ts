@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import { PROFILES, PROFILE_COLORS, PROFILE_KPIS, WINDOWS_DATA } from '../data/portfolioData';
+import {
+  PROFILES,
+  PROFILE_COLORS,
+  PROFILE_KPIS,
+  WINDOWS_DATA,
+  COMPOSITION_SNAPSHOTS,
+  ASSET_ALLOCATION_SNAPSHOTS,
+  cleanCompositionSnapshots,
+} from '../data/portfolioData';
+import { ALLOCATION_SCHEMA_VERSION } from '../utils/allocationProcessor';
 
 /**
  * Fuente unica de datos para toda la landing.
@@ -19,6 +28,7 @@ import { PROFILES, PROFILE_COLORS, PROFILE_KPIS, WINDOWS_DATA } from '../data/po
 /** Documentos especiales: no son periodos, no deben mezclarse con los meses. */
 export const PERFORMANCE_DOC_ID = 'performance_data';
 export const RETURNS_DOC_ID = 'returns_data';
+export const ALLOCATION_DOC_ID = 'allocation_data';
 
 const MONTH_TO_NUM: Record<string, number> = {
   enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6,
@@ -129,6 +139,33 @@ function adaptWindows(windows: any): typeof WINDOWS_DATA {
   };
 }
 
+/**
+ * Composicion y asset allocation del libro AA.
+ *
+ * Se comprueba `schemaVersion` por lo mismo que en performance_data: mientras no
+ * se haya subido el libro con el parser nuevo, es preferible seguir con los datos
+ * empaquetados a mostrar medio documento de una version anterior.
+ */
+function adaptAllocation(allocation: any) {
+  if (allocation?.schemaVersion !== ALLOCATION_SCHEMA_VERSION) {
+    return { composition: COMPOSITION_SNAPSHOTS, assetAllocation: ASSET_ALLOCATION_SNAPSHOTS };
+  }
+
+  const composition = Array.isArray(allocation.composition) && allocation.composition.length
+    ? (cleanCompositionSnapshots(allocation.composition) as typeof COMPOSITION_SNAPSHOTS)
+    : COMPOSITION_SNAPSHOTS;
+
+  // Cada subida deja una foto; el documento las acumula, de la mas reciente a la
+  // mas antigua.
+  const assetAllocation = Array.isArray(allocation.assetAllocation) && allocation.assetAllocation.length
+    ? ([...allocation.assetAllocation].sort((a, b) =>
+        String(b.period).localeCompare(String(a.period))
+      ) as typeof ASSET_ALLOCATION_SNAPSHOTS)
+    : ASSET_ALLOCATION_SNAPSHOTS;
+
+  return { composition, assetAllocation };
+}
+
 export interface MonthlyReportsState {
   /** Todos los documentos de periodo, del mas reciente al mas antiguo. */
   reports: { id: string; data: any }[];
@@ -146,6 +183,10 @@ export interface MonthlyReportsState {
   profileKpis: typeof PROFILE_KPIS;
   /** Ventanas de rentabilidad anualizada. Cae a las estaticas. */
   windows: typeof WINDOWS_DATA;
+  /** Historico de composicion por fecha de rebalanceo. Cae a los estaticos. */
+  composition: typeof COMPOSITION_SNAPSHOTS;
+  /** Fotos de asset allocation, de la mas reciente a la mas antigua. Cae a las estaticas. */
+  assetAllocation: typeof ASSET_ALLOCATION_SNAPSHOTS;
   /** Fecha de la ultima actualizacion registrada en la base de datos. */
   lastUpdated: Date | null;
   loading: boolean;
@@ -162,6 +203,8 @@ export function useMonthlyReports(): MonthlyReportsState {
     returns: null,
     profileKpis: PROFILE_KPIS,
     windows: WINDOWS_DATA,
+    composition: COMPOSITION_SNAPSHOTS,
+    assetAllocation: ASSET_ALLOCATION_SNAPSHOTS,
     lastUpdated: null,
     loading: true,
     error: null,
@@ -174,6 +217,7 @@ export function useMonthlyReports(): MonthlyReportsState {
         const reports: { id: string; data: any }[] = [];
         let performance: any | null = null;
         let returns: any | null = null;
+        let allocation: any | null = null;
         let lastUpdated: Date | null = null;
 
         snapshot.forEach((docSnap) => {
@@ -190,6 +234,10 @@ export function useMonthlyReports(): MonthlyReportsState {
           }
           if (docSnap.id === RETURNS_DOC_ID) {
             returns = data;
+            return;
+          }
+          if (docSnap.id === ALLOCATION_DOC_ID) {
+            allocation = data;
             return;
           }
           reports.push({ id: docSnap.id, data });
@@ -236,6 +284,7 @@ export function useMonthlyReports(): MonthlyReportsState {
           returns,
           profileKpis: adaptKpis(returns?.kpis),
           windows: adaptWindows(returns?.windows),
+          ...adaptAllocation(allocation),
           lastUpdated,
           loading: false,
           error: null,

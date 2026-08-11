@@ -107,7 +107,15 @@ const cleanName = (n: string): string => {
     return cleaned.trim();
 };
 
-const cleanCompositionSnapshots = (snapshots: any[]) => {
+/**
+ * Normaliza el historico de composicion: junta los fondos que aparecen escritos
+ * de dos formas y arrastra los perfiles que no rebalancearon ese dia, porque la
+ * cartera siguio siendo la anterior aunque no haya columna en el Excel.
+ *
+ * Se exporta porque el hook la aplica tambien a lo que llega de Firestore: si el
+ * dato subido no pasara por aqui, los meses sin rebalanceo saldrian vacios.
+ */
+export const cleanCompositionSnapshots = (snapshots: any[]) => {
     const cleaned = snapshots.map(snap => {
         const cleanedCategories = snap.categories.map((catGroup: any) => {
             const mergedItems = new Map();

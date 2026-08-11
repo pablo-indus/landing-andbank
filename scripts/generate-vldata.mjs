@@ -12,32 +12,15 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import * as XLSX from 'xlsx';
+// Los nombres de serie viven en un solo sitio: si aqui se cambiara el benchmark
+// de un perfil y en la web no, el grafico rotularia una serie y pintaria otra.
+import { PORTFOLIO_SERIES as PROFILE_SERIES, BENCHMARK_SERIES } from '../src/data/vlSeries.ts';
 
 const src = process.argv[2];
 if (!src) {
   console.error('Falta la ruta del Excel.');
   process.exit(1);
 }
-
-// Orden de perfiles tal y como los usa la web (PROFILES en portfolioData.ts).
-const PROFILE_SERIES = [
-  'Gestionada Conservadora +',
-  'Gestionada Conservadora',
-  'Gestionada Moderada',
-  'Gestionada Equilibrada',
-  'Gestionada Agresiva',
-  'Gestionada Agresiva +',
-];
-
-// Benchmark asignado a cada perfil, en el mismo orden.
-const BENCHMARK_SERIES = [
-  'EAA Fund EUR Diversified Bond - Short Term',
-  'EAA Fund EUR Cautious Allocation - Global',
-  'EAA Fund EUR Moderate Allocation - Global',
-  'EAA Fund EUR Flexible Allocation - Global',
-  'EAA Fund EUR Aggressive Allocation - Global',
-  'MSCI World NR EUR',
-];
 
 const wb = XLSX.read(readFileSync(src), { type: 'buffer' });
 
@@ -75,9 +58,39 @@ BENCHMARK_SERIES.forEach((name, i) => {
   out[`b${i}`] = extract(name);
 });
 
+const DAY_MS = 86400000;
+
+/**
+ * Comprime la serie a { fecha de inicio, valores por dia }.
+ *
+ * Solo vale si la serie es diaria y sin huecos, que es como las exporta
+ * Morningstar (traen tambien sabados y domingos). Si algun dia faltara, el
+ * desplazamiento dejaria de corresponder con la fecha y las curvas saldrian
+ * corridas, asi que se comprueba en lugar de darlo por hecho.
+ *
+ * Los valores se redondean a 4 decimales: sobre cifras de 100 a 600 eso es una
+ * precision de 1 entre 10 millones, invisible en un grafico, y ahorra la mitad
+ * del archivo.
+ */
+const pack = (series, key) => {
+  const start = Date.parse(`${series[0].d}T00:00:00Z`);
+  series.forEach((p, i) => {
+    const expected = new Date(start + i * DAY_MS).toISOString().slice(0, 10);
+    if (p.d !== expected) {
+      throw new Error(`La serie "${key}" tiene un hueco: se esperaba ${expected} y vino ${p.d}.`);
+    }
+  });
+  return { s: series[0].d, v: series.map((p) => Number(p.v.toFixed(4))) };
+};
+
+const packed = {};
+for (const key of Object.keys(out)) packed[key] = pack(out[key], key);
+
 writeFileSync(
   new URL('../src/data/vlData.ts', import.meta.url),
-  `export const vlData = ${JSON.stringify(out)};\n`,
+  '// Generado por scripts/generate-vldata.mjs. No editar a mano.\n' +
+    "import { expandAll } from './expandSeries.ts';\n\n" +
+    `export const vlData = expandAll(${JSON.stringify(packed)});\n`,
   'utf8'
 );
 

@@ -262,6 +262,29 @@ export const SectionBacktest: React.FC<{ forcedProfileIndices?: number[]; isPrin
     return { dates: resDates, capitalSeries, valueSeriesByProfile, totalCapital: currentCapital, finalValues };
   }, [startDateStr, initialAmount, freq, freqAmount, lumpDateStr, lumpAmount, trajectories, renderIndices, isStressTest, stressScenario]);
 
+  // Cifras de cada perfil, que se pintan como tarjetas en pantalla y como tabla
+  // en el PDF cuando hay muchos perfiles.
+  const metricsOf = (pIdx: number) => {
+    const finalValue = simResult ? simResult.finalValues[pIdx] : 0;
+    const totalCapital = simResult ? simResult.totalCapital : 0;
+    const gain = finalValue - totalCapital;
+    const gainPct = totalCapital > 0 ? (gain / totalCapital) * 100 : 0;
+
+    let annualizedPct = 0;
+    if (totalCapital > 0 && startDateStr) {
+      const startY = new Date(startDateStr).getFullYear();
+      const endY = new Date(TODAY).getFullYear();
+      const years = Math.max(1, endY - startY + (new Date(TODAY).getMonth() - new Date(startDateStr).getMonth()) / 12);
+      annualizedPct = (Math.pow(finalValue / totalCapital, 1 / years) - 1) * 100;
+    }
+
+    return { finalValue, totalCapital, gain, gainPct, annualizedPct };
+  };
+
+  // Seis perfiles en tarjetas son media hoja de PDF. A partir de tres se
+  // resumen en una tabla, que ademas deja compararlos de un vistazo.
+  const kpisAsTable = !!isPrintMode && renderIndices.length > 2;
+
   // SVG Chart Dimensions
   const W = 900;
   const H = isPrintMode ? 320 : 350;
@@ -289,6 +312,8 @@ export const SectionBacktest: React.FC<{ forcedProfileIndices?: number[]; isPrin
 
   return (
     <section id="simulador" className={isPrintMode ? "" : "pt-10 scroll-mt-20"}>
+      {/* En el PDF el titulo lo pone la maqueta del informe, no la seccion. */}
+      {!isPrintMode && (
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
         <div className="flex items-center gap-3">
           <span className="bg-red-700 text-white w-8 h-8 rounded flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
@@ -304,8 +329,9 @@ export const SectionBacktest: React.FC<{ forcedProfileIndices?: number[]; isPrin
           </div>
         </div>
       </div>
+      )}
 
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg p-5 shadow-sm space-y-5">
+      <div className={`bg-white dark:bg-zinc-900 ${isPrintMode ? "space-y-2" : "border border-zinc-200 dark:border-zinc-700 rounded-lg p-5 shadow-sm space-y-5"}`}>
         {!isPrintMode && (
           <>
         {/* Stress Test Toggle */}
@@ -453,19 +479,52 @@ export const SectionBacktest: React.FC<{ forcedProfileIndices?: number[]; isPrin
         </>
         )}
 
+        {/* KPIs en tabla: solo en el PDF y con tres perfiles o mas */}
+        {simResult && kpisAsTable && (
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-zinc-900 text-white text-[8px] font-bold uppercase tracking-wider">
+                <th className="px-2 py-1 text-left">Perfil</th>
+                <th className="px-2 py-1 text-right">Capital aportado</th>
+                <th className="px-2 py-1 text-right">Valor actual</th>
+                <th className="px-2 py-1 text-right">Plusvalía</th>
+                <th className="px-2 py-1 text-right">Rentabilidad</th>
+                <th className="px-2 py-1 text-right">TIR anualizada</th>
+              </tr>
+            </thead>
+            <tbody>
+              {renderIndices.map((pIdx) => {
+                const m = metricsOf(pIdx);
+                return (
+                  <tr key={pIdx} className="border-b border-zinc-100">
+                    <td className="px-2 py-[3px] text-[8.5px] font-bold uppercase tracking-wider" style={{ color: pIdx === 999 ? '#4B5563' : PROFILE_COLORS[pIdx] }}>
+                      {pIdx === 999 ? 'Benchmark' : PROFILES[pIdx]}
+                    </td>
+                    <td className="px-2 py-[3px] text-[8.5px] text-right font-mono tabular-nums text-zinc-700">
+                      {Math.round(m.totalCapital).toLocaleString('es-ES')} €
+                    </td>
+                    <td className="px-2 py-[3px] text-[8.5px] text-right font-mono tabular-nums font-bold text-zinc-900">
+                      {Math.round(m.finalValue).toLocaleString('es-ES')} €
+                    </td>
+                    <td className={`px-2 py-[3px] text-[8.5px] text-right font-mono tabular-nums ${m.gain >= 0 ? "text-zinc-700" : "text-red-700"}`}>
+                      {Math.round(m.gain).toLocaleString('es-ES')} €
+                    </td>
+                    <td className={`px-2 py-[3px] text-[8.5px] text-right font-mono tabular-nums ${m.gain >= 0 ? "text-zinc-700" : "text-red-700"}`}>
+                      {m.gainPct.toFixed(1).replace('.', ',')}%
+                    </td>
+                    <td className="px-2 py-[3px] text-[8.5px] text-right font-mono tabular-nums font-bold text-zinc-900">
+                      {m.annualizedPct.toFixed(1).replace('.', ',')}%
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+
         {/* KPIs Results Grid */}
-        {simResult && renderIndices.map(pIdx => {
-          const finalValue = simResult.finalValues[pIdx];
-          const gain = finalValue - simResult.totalCapital;
-          const gainPct = simResult.totalCapital > 0 ? (gain / simResult.totalCapital) * 100 : 0;
-          
-          let annualizedPct = 0;
-          if (simResult.totalCapital > 0 && startDateStr) {
-             const startY = new Date(startDateStr).getFullYear();
-             const endY = new Date(TODAY).getFullYear();
-             const years = Math.max(1, endY - startY + (new Date(TODAY).getMonth() - new Date(startDateStr).getMonth())/12);
-             annualizedPct = (Math.pow(finalValue / simResult.totalCapital, 1 / years) - 1) * 100;
-          }
+        {simResult && !kpisAsTable && renderIndices.map(pIdx => {
+          const { finalValue, gain, gainPct, annualizedPct } = metricsOf(pIdx);
 
           return (
           <div key={pIdx} className={isPrintMode ? "mb-2" : "mb-4"}>
@@ -499,7 +558,7 @@ export const SectionBacktest: React.FC<{ forcedProfileIndices?: number[]; isPrin
               <span className={`block font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider ${isPrintMode ? "text-[8px]" : "text-[9.5px]"}`}>
                 TIR Anualizada Aprox.
               </span>
-              <span className="block text-base font-extrabold text-zinc-700 dark:text-zinc-300 font-mono mt-1">
+              <span className={`block font-extrabold text-zinc-700 dark:text-zinc-300 font-mono ${isPrintMode ? "text-sm mt-0.5" : "text-base mt-1"}`}>
                 {annualizedPct !== null
                   ? `${annualizedPct.toFixed(1).replace('.', ',')}%`
                   : '—'}
@@ -680,9 +739,12 @@ export const SectionBacktest: React.FC<{ forcedProfileIndices?: number[]; isPrin
 
         <p className="text-[9px] text-zinc-400 italic bg-zinc-50 dark:bg-zinc-800/50/50 p-1.5 rounded mt-2">          Backtest construido sobre las rentabilidades anualizadas reales por ventana (1, 2, 3, 4, 5 años y desde 2009). Refleja el interés compuesto y las fechas exactas de las aportaciones.        </p>
       </div>
-        <div className="mt-4 text-[9px] font-medium text-zinc-400 text-left border-t border-zinc-100 pt-3">
-          * Retornos históricos de clientes reales, netos de cualquier comisión aplicable (gestión, custodia, etc).
-        </div>
+        {/* En el PDF el descargo va una sola vez, en el pie de cada hoja. */}
+        {!isPrintMode && (
+          <div className="mt-4 text-[9px] font-medium text-zinc-400 text-left border-t border-zinc-100 pt-3">
+            * Retornos históricos de clientes reales, netos de cualquier comisión aplicable (gestión, custodia, etc).
+          </div>
+        )}
     </section>
   );
 };

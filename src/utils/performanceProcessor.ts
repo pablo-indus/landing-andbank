@@ -1,158 +1,132 @@
 import * as XLSX from 'xlsx';
+// Con extension, a diferencia del resto del proyecto: scripts/audit-benchmarks.ts
+// carga este modulo con node a secas, y node no resuelve rutas sin extension.
+import { PORTFOLIO_SERIES, BENCHMARK_SERIES } from '../data/vlSeries.ts';
+import { toMonthEnds, windowStats, type SeriesPoint } from './seriesStats.ts';
+
+/**
+ * Lee el Excel VL de Morningstar y deja en Firestore lo que necesita el grafico
+ * de retorno/riesgo de SectionRendimiento: la volatilidad de cada cartera y la
+ * rentabilidad y volatilidad de su benchmark.
+ *
+ * NO guarda rentabilidades de cartera. Las cifras de cartera que publica la web
+ * son las netas de comisiones del libro AA (returns_data); las de este archivo
+ * son brutas, y tener las dos en la base de datos bajo el mismo nombre ("1Y")
+ * es pedir que alguien pinte una al lado de la otra. Para el eje de volatilidad
+ * si sirven: una comision constante resta rentabilidad, no oscilacion.
+ */
+
+/** Sube al cambiar la forma del documento o el metodo de calculo. */
+export const PERFORMANCE_SCHEMA_VERSION = 2;
+
+/** Ventanas del grafico y su longitud en meses. */
+export const WINDOW_MONTHS = { '1Y': 12, '3Y': 36, '5Y': 60 } as const;
+export type WindowKey = keyof typeof WINDOW_MONTHS;
 
 export interface PerformanceDB {
-  [profile: string]: {
-    returns: Record<string, number | null>;
-    volatilities: Record<string, number | null>;
-    benchmark: {
-      name: string;
-      returns: Record<string, number | null>;
-      volatilities: Record<string, number | null>;
+  schemaVersion: number;
+  /** Ultimo cierre mensual completo del archivo, "yyyy-mm". */
+  asOf: string | null;
+  profiles: {
+    [profile: string]: {
+      volatilities: Record<WindowKey, number | null>;
+      benchmark: {
+        name: string;
+        returns: Record<WindowKey, number | null>;
+        volatilities: Record<WindowKey, number | null>;
+      };
     };
   };
 }
 
-const MAPPING = [
-  { profile: "Conservador +", bmkName: "EAA Fund EUR Diversified Bond - Short Term", portIdx: 0, bmkIdx: 1 },
-  { profile: "Conservador", bmkName: "EAA Fund EUR Cautious Allocation - Global", portIdx: 2, bmkIdx: 3 },
-  { profile: "Moderado", bmkName: "EAA Fund EUR Moderate Allocation - Global", portIdx: 4, bmkIdx: 5 },
-  { profile: "Equilibrado", bmkName: "EAA Fund EUR Flexible Allocation - Global", portIdx: 6, bmkIdx: 7 },
-  { profile: "Agresivo", bmkName: "EAA Fund EUR Aggressive Allocation - Global", portIdx: 8, bmkIdx: 9 },
-  { profile: "Agresivo +", bmkName: "MSCI World NR EUR", portIdx: 10, bmkIdx: 11 }
-];
+/** Orden de perfiles de la web; coincide con el de las listas de vlSeries. */
+const PROFILES = ['Conservador +', 'Conservador', 'Moderado', 'Equilibrado', 'Agresivo', 'Agresivo +'];
+
+/** "dd/mm/yyyy", una fecha de Excel o un numero de serie -> "yyyy-mm-dd". */
+const toIso = (value: unknown): string | null => {
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (typeof value === 'number') {
+    return new Date(Math.round((value - 25569) * 86400 * 1000)).toISOString().slice(0, 10);
+  }
+  const [d, m, y] = String(value).split('/');
+  if (!d || !m || !y) return null;
+  return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+};
+
+/**
+ * Indexa las hojas por el nombre real de la serie, que esta en la celda B1.
+ *
+ * Nunca por el nombre de la pestaña: "Investment Growth - Conservador" contiene
+ * la serie "Gestionada Conservadora +", asi que fiarse del titulo intercambia
+ * dos perfiles de riesgo. Tampoco por posicion, que es lo que hacia antes esta
+ * funcion: hoy el orden de exportacion coincide, pero nada lo garantiza y el
+ * fallo seria mudo.
+ */
+function indexBySeriesName(workbook: XLSX.WorkBook): Map<string, SeriesPoint[]> {
+  const index = new Map<string, SeriesPoint[]>();
+
+  for (const sheetName of workbook.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json<any[]>(workbook.Sheets[sheetName], {
+      header: 1,
+      defval: null,
+    });
+    const seriesName = String(rows[0]?.[1] ?? '').trim();
+    if (!seriesName) continue;
+
+    const points = rows
+      .slice(1)
+      .filter((r) => r && r[0] != null && r[1] != null && !isNaN(Number(r[1])))
+      .map((r) => ({ d: toIso(r[0]), v: Number(r[1]) }))
+      .filter((p): p is SeriesPoint => p.d !== null)
+      .sort((a, b) => a.d.localeCompare(b.d));
+
+    if (points.length) index.set(seriesName, points);
+  }
+
+  return index;
+}
 
 export async function processPerformanceExcel(file: File): Promise<PerformanceDB> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array', raw: true });
-        
-        const outputDb: PerformanceDB = {};
-        
-        // Función para extraer una serie de fechas y valores de una hoja
-        const extractSeries = (sheetName: string) => {
-          const sheet = workbook.Sheets[sheetName];
-          const rows = XLSX.utils.sheet_to_json<any>(sheet, { raw: true });
-          const series: { date: Date, val: number }[] = [];
-          
-          rows.forEach(row => {
-            const keys = Object.keys(row);
-            const dateKey = keys.find(k => String(k).toLowerCase() === 'date');
-            const valKey = keys.find(k => k !== dateKey);
-            if (!dateKey || !valKey) return;
-            
-            let dateObj: Date | null = null;
-            if (typeof row[dateKey] === 'number') {
-              dateObj = new Date(Math.round((row[dateKey] - 25569) * 86400 * 1000));
-            } else if (typeof row[dateKey] === 'string') {
-              const parts = row[dateKey].split('/');
-              if (parts.length === 3) dateObj = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-            }
-            
-            let valNum = typeof row[valKey] === 'number' ? row[valKey] : parseFloat(String(row[valKey]).replace(/\./g, '').replace(',', '.'));
-            
-            if (dateObj && !isNaN(valNum)) series.push({ date: dateObj, val: valNum });
-          });
-          return series.sort((a, b) => a.date.getTime() - b.date.getTime());
-        };
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+  const series = indexBySeriesName(workbook);
 
-        // Extraemos TODAS las fechas para saber cuál es el último día disponible en el Excel
-        let allDates: number[] = [];
-        MAPPING.forEach(m => {
-          const s = extractSeries(workbook.SheetNames[m.portIdx]);
-          allDates.push(...s.map(x => x.date.getTime()));
-        });
-        const lastDate = new Date(Math.max(...allDates));
-        
-        // Marcos temporales
-        const ytdStart = new Date(lastDate.getFullYear() - 1, 11, 31);
-        const y2025Start = new Date(2024, 11, 31);
-        const y2025End = new Date(Math.min(new Date(2025, 11, 31).getTime(), lastDate.getTime()));
-        const date1y = new Date(lastDate.getTime() - 365 * 24 * 60 * 60 * 1000);
-        const date2y = new Date(lastDate.getTime() - 2 * 365 * 24 * 60 * 60 * 1000);
-        const date3y = new Date(lastDate.getTime() - 3 * 365 * 24 * 60 * 60 * 1000);
-        const date5y = new Date(lastDate.getTime() - 5 * 365 * 24 * 60 * 60 * 1000);
-        const date2009 = new Date(2009, 0, 1);
+  const missing = [...PORTFOLIO_SERIES, ...BENCHMARK_SERIES].filter((name) => !series.has(name));
+  if (missing.length) {
+    throw new Error(`Faltan series en el archivo: ${missing.join(', ')}.`);
+  }
 
-        const getClosest = (series: {date: Date, val: number}[], target: Date) => {
-          if (!series.length) return null;
-          if (target < series[0].date) return series[0].val;
-          let closest = series[0].val;
-          for (let s of series) {
-            if (s.date <= target) closest = s.val;
-            else break;
-          }
-          return closest;
-        };
+  const windows = Object.keys(WINDOW_MONTHS) as WindowKey[];
+  const blank = () => ({}) as Record<WindowKey, number | null>;
 
-        const calcReturn = (series: {date: Date, val: number}[], start: Date, end: Date, annualize = false) => {
-          const vs = getClosest(series, start);
-          const ve = getClosest(series, end);
-          if (vs === null || ve === null || vs === 0) return null;
-          let ret = (ve / vs) - 1;
-          if (annualize) {
-            const years = (end.getTime() - start.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
-            if (years > 1) ret = Math.pow(1 + ret, 1 / years) - 1;
-          }
-          return Number((ret * 100).toFixed(2));
-        };
+  const profiles: PerformanceDB['profiles'] = {};
+  let asOf: string | null = null;
 
-        const calcVol = (series: {date: Date, val: number}[], start: Date, end: Date) => {
-          const w = series.filter(s => s.date >= start && s.date <= end);
-          if (w.length < 10) return null;
-          const rets = [];
-          for (let i = 1; i < w.length; i++) {
-            if (w[i-1].val !== 0) rets.push((w[i].val / w[i-1].val) - 1);
-          }
-          if (!rets.length) return null;
-          const mean = rets.reduce((a,b) => a+b, 0) / rets.length;
-          const variance = rets.reduce((a,b) => a + Math.pow(b - mean, 2), 0) / (rets.length - 1);
-          return Number((Math.sqrt(variance) * Math.sqrt(252) * 100).toFixed(2));
-        };
+  PROFILES.forEach((profile, i) => {
+    const portfolio = series.get(PORTFOLIO_SERIES[i])!;
+    const benchmark = series.get(BENCHMARK_SERIES[i])!;
 
-        // Ejecutar los cálculos para cada perfil
-        MAPPING.forEach(m => {
-          const pSeries = extractSeries(workbook.SheetNames[m.portIdx]);
-          const bSeries = extractSeries(workbook.SheetNames[m.bmkIdx]);
-          
-          outputDb[m.profile] = {
-            returns: {
-              "YTD": calcReturn(pSeries, ytdStart, lastDate),
-              "2025": calcReturn(pSeries, y2025Start, y2025End),
-              "1Y": calcReturn(pSeries, date1y, lastDate),
-              "2Y": calcReturn(pSeries, date2y, lastDate, true),
-              "3Y": calcReturn(pSeries, date3y, lastDate, true),
-              "5Y": calcReturn(pSeries, date5y, lastDate, true),
-              "2009": calcReturn(pSeries, date2009, lastDate, true)
-            },
-            volatilities: {
-              "1Y": calcVol(pSeries, date1y, lastDate),
-              "3Y": calcVol(pSeries, date3y, lastDate),
-              "5Y": calcVol(pSeries, date5y, lastDate)
-            },
-            benchmark: {
-              name: m.bmkName,
-              returns: {
-                "YTD": calcReturn(bSeries, ytdStart, lastDate),
-                "1Y": calcReturn(bSeries, date1y, lastDate),
-                "3Y": calcReturn(bSeries, date3y, lastDate, true),
-                "5Y": calcReturn(bSeries, date5y, lastDate, true)
-              },
-              volatilities: {
-                "1Y": calcVol(bSeries, date1y, lastDate),
-                "3Y": calcVol(bSeries, date3y, lastDate),
-                "5Y": calcVol(bSeries, date5y, lastDate)
-              }
-            }
-          };
-        });
-        resolve(outputDb);
-      } catch (err) {
-        reject(err);
-      }
+    const volatilities = blank();
+    const benchReturns = blank();
+    const benchVols = blank();
+
+    for (const w of windows) {
+      volatilities[w] = windowStats(portfolio, WINDOW_MONTHS[w]).vol;
+      const b = windowStats(benchmark, WINDOW_MONTHS[w]);
+      benchReturns[w] = b.ret;
+      benchVols[w] = b.vol;
+    }
+
+    // El ultimo mes COMPLETO, no la ultima fecha del archivo: la exportacion se
+    // corta a mitad de mes y esa fecha no corresponde a ningun dato del grafico.
+    const lastMonth = toMonthEnds(portfolio).at(-1)?.m ?? null;
+    if (lastMonth && (!asOf || lastMonth > asOf)) asOf = lastMonth;
+
+    profiles[profile] = {
+      volatilities,
+      benchmark: { name: BENCHMARK_SERIES[i], returns: benchReturns, volatilities: benchVols },
     };
-    reader.readAsArrayBuffer(file);
   });
+
+  return { schemaVersion: PERFORMANCE_SCHEMA_VERSION, asOf, profiles };
 }

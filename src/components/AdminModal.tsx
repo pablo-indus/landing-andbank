@@ -10,10 +10,16 @@ import { processCreditExcel } from '../utils/creditProcessor';
 import { processChangesExcel } from '../utils/changesProcessor';
 import { processContributorsExcel } from '../utils/contributorsProcessor';
 import { processReturnsExcel } from '../utils/returnsProcessor';
+import { processAllocationExcel } from '../utils/allocationProcessor';
 
 interface AdminModalProps {
   onClose: () => void;
 }
+
+const MONTH_NAMES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+];
 
 /**
  * Tipos de informe reconocidos. El usuario elige explicitamente en un desplegable
@@ -50,13 +56,13 @@ const REPORT_TYPES: { id: ReportType; label: string; hint: string; accept: strin
   {
     id: 'rentabilidades',
     label: 'Rentabilidades netas (libro AA)',
-    hint: 'Ej. AA GDC 5 - ACTUAL.xlsx — historico anual, mensual y volatilidad, ya netos de comisiones.',
+    hint: 'Ej. AA GDC 5 - ACTUAL.xlsx — rentabilidades netas, composicion de carteras y asset allocation.',
     accept: '.xlsx,.xls',
   },
   {
     id: 'rendimiento',
     label: 'Rendimientos (carteras y benchmarks)',
-    hint: 'Ej. VL - Carteras y Benchmarks.xlsx — recalcula rentabilidades y volatilidades.',
+    hint: 'Ej. VL - Carteras y Benchmarks.xlsx — volatilidades y benchmarks del grafico de riesgo.',
     accept: '.xlsx,.xls',
   },
   {
@@ -233,28 +239,74 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
       updatedAt: new Date().toISOString(),
     });
 
+    const allocation = await uploadAllocation(f, data);
+
     const missing = data.missingProfiles.length
       ? ` Sin datos para: ${data.missingProfiles.join(' y ')}.`
       : '';
     return (
       `Rentabilidades netas actualizadas: ${data.annual.length} años, ` +
-      `${data.monthly.length} meses, ${data.volatility.length} de volatilidad.${missing}`
+      `${data.monthly.length} meses, ${data.volatility.length} de volatilidad.${missing} ${allocation}`
+    );
+  };
+
+  /**
+   * Composicion y asset allocation, del mismo archivo y en la misma subida.
+   *
+   * El asset allocation del libro es una foto del momento, no una serie, asi que
+   * el documento va acumulando una por periodo; la composicion si trae su propio
+   * historico y se reemplaza entera.
+   *
+   * El periodo sale del ultimo mes de las rentabilidades del propio archivo. No
+   * del nombre del archivo ni de la fecha de hoy: el libro se sube semanas
+   * despues del cierre y fecharlo con "hoy" lo colocaria en un mes que todavia
+   * no ha terminado.
+   */
+  const uploadAllocation = async (f: File, returns: Awaited<ReturnType<typeof processReturnsExcel>>) => {
+    const period = [...returns.monthly].map((m: any) => m.period).sort().at(-1);
+    if (!period) return 'No se pudo fechar el asset allocation: el archivo no trae meses.';
+
+    const [year, month] = period.split('-');
+    const label = `${MONTH_NAMES[Number(month) - 1]} ${year}`;
+
+    const data = await processAllocationExcel(f, period, label);
+    const ref = doc(db, 'monthly_reports', 'allocation_data');
+    const snap = await getDoc(ref);
+
+    const previous: any[] =
+      snap.exists() && snap.data().schemaVersion === data.schemaVersion
+        ? (snap.data().assetAllocation ?? [])
+        : [];
+    const assetAllocation = [
+      data.assetAllocation,
+      ...previous.filter((s: any) => s.period !== period),
+    ].sort((a, b) => String(b.period).localeCompare(String(a.period)));
+
+    await setDoc(ref, {
+      schemaVersion: data.schemaVersion,
+      assetAllocation,
+      composition: data.composition,
+      updatedAt: new Date().toISOString(),
+    });
+
+    return (
+      `Asset allocation de ${label} guardado (${assetAllocation.length} periodos) ` +
+      `y composicion con ${data.composition.length} fechas de rebalanceo.`
     );
   };
 
   const uploadRendimiento = async (f: File) => {
+    // Si falta alguna serie, processPerformanceExcel dice cual. Antes se
+    // comprobaba aqui que el resultado no viniera vacio, lo que solo detectaba
+    // el caso de que fallaran las doce a la vez.
     const perfData = await processPerformanceExcel(f);
-
-    if (Object.keys(perfData).length === 0) {
-      throw new Error('No se pudieron leer las series de rentabilidad. Revisa que el archivo tenga las hojas esperadas.');
-    }
 
     await setDoc(doc(db, 'monthly_reports', 'performance_data'), {
       ...perfData,
       updatedAt: new Date().toISOString(),
     });
 
-    return 'Rendimientos y volatilidades recalculados correctamente.';
+    return `Volatilidades y benchmarks actualizados con el cierre de ${perfData.asOf ?? 'la ultima fecha del archivo'}.`;
   };
 
   const handleUpload = async () => {

@@ -5,11 +5,58 @@
 html {  scroll-behavior: smooth;}
 body {  font-family: Verdana, Geneva, sans-serif;}
 
+/*
+  Maqueta del informe. La pagina es A4 vertical con 12 mm de margen, asi que la
+  caja util mide 186 x 273 mm. `PrintReportLayout` reparte el contenido en
+  bloques que caben en esa caja y crea un `.report-page` por hoja: el salto de
+  pagina lo decide el componente, no el navegador. Por eso las medidas de aqui y
+  la constante `PAGE_BODY_PX` de `PrintReportLayout.tsx` tienen que ir a la par.
+*/
+.report-page {
+  width: 186mm;
+  min-height: 271mm;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  color: #18181b;
+}
+
+/*
+  La portada va a sangre, sin los margenes de las demas hojas: la banda roja y
+  el bloque gris tienen que llegar al borde del papel.
+*/
+.report-cover {
+  width: 210mm;
+  height: 297mm;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  color: #18181b;
+}
+
+/* Contenedor oculto donde se miden los bloques antes de repartirlos. */
+.report-measure {
+  position: absolute;
+  left: -10000px;
+  top: 0;
+  width: 186mm;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 @media print {
   @page {
-    margin: 10mm;
-    size: A4 landscape;}
-  
+    margin: 12mm;
+    size: A4 portrait;
+  }
+
+  /* La portada usa su propia hoja, sin margenes, para poder ir a sangre. */
+  @page cover {
+    margin: 0;
+    size: A4 portrait;
+  }
 
   body, .print\:block {
     background-color: white !important;
@@ -26,9 +73,35 @@ body {  font-family: Verdana, Geneva, sans-serif;}
     white-space: normal !important;
   }
 
-  .break-inside-avoid {
+  .break-inside-avoid, tr {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
+  }
+
+  .report-page {
+    width: 100%;
+    break-after: page;
+    page-break-after: always;
+    break-inside: avoid;
+  }
+
+  .report-cover {
+    page: cover;
+    width: 210mm;
+    height: 297mm;
+    break-after: page;
+    page-break-after: always;
+    break-inside: avoid;
+  }
+
+  /* Sin esto el navegador añade una hoja en blanco al final. */
+  .report-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .report-measure {
+    display: none !important;
   }
 }
 

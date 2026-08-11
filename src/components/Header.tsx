@@ -97,10 +97,13 @@ export const Header: React.FC<HeaderProps> = ({ activeSection }) => {
         <div className="flex items-center gap-3">
           {/* Logo mark */}
           <div className="flex items-center">
-            <img src="/logo.png" alt="Andbank" className="h-8 object-contain" onError={(e) => {
-              // Fallback if image not found, but we keep the img tag as requested
-              (e.target as HTMLImageElement).src = 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/ec/Andbank_logo.png/320px-Andbank_logo.png';
-            }} />
+            {/*
+              El logo es public/logo.jpg. Antes apuntaba a un logo.png que era
+              este mismo JPG guardado como texto: el navegador no podia
+              decodificarlo y caia en una imagen de Wikipedia, que es de un
+              tercero y ademas no carga sin internet.
+            */}
+            <img src="/logo.jpg" alt="Andbank" className="h-8 object-contain" />
           </div>
           <div className="hidden sm:block ml-2 border-l border-zinc-200 dark:border-zinc-700 pl-4">
             <p className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium uppercase tracking-wider mt-1">

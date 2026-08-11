@@ -69,7 +69,7 @@ export const SectionContribuidores: React.FC<{ forcedProfileIdx?: number; forced
       </div>
 
       )}
-      <div className={`bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg ${isPrintMode ? "p-2" : "p-5 shadow-sm"} space-y-5`}>
+      <div className={`bg-white dark:bg-zinc-900 ${isPrintMode ? "" : "border border-zinc-200 dark:border-zinc-700 rounded-lg p-5 shadow-sm"} space-y-5`}>
         {/* Fixed Aligned Header Controls */}
         {!isPrintMode && (
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-100 pb-4">
@@ -236,9 +236,12 @@ export const SectionContribuidores: React.FC<{ forcedProfileIdx?: number; forced
         })}
         </div>
       </div>
-        <div className="mt-4 text-[9px] font-medium text-zinc-400 text-left border-t border-zinc-100 pt-3">
-          * Retornos históricos de clientes reales, netos de cualquier comisión aplicable (gestión, custodia, etc).
-        </div>
+        {/* En el PDF el descargo va una sola vez, en el pie de cada hoja. */}
+        {!isPrintMode && (
+          <div className="mt-4 text-[9px] font-medium text-zinc-400 text-left border-t border-zinc-100 pt-3">
+            * Retornos históricos de clientes reales, netos de cualquier comisión aplicable (gestión, custodia, etc).
+          </div>
+        )}
     </section>
   );
 };

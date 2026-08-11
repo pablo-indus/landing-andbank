@@ -1,27 +1,65 @@
-import React, { useState, useRef } from 'react';
-import { PROFILES, PROFILE_COLORS } from '../data/portfolioData';
+import React, { useState, useRef, useMemo } from 'react';
+import { PROFILES, PROFILE_COLORS, HISTORICAL_VL } from '../data/portfolioData';
+import { BENCHMARK_SERIES } from '../data/vlSeries';
 import { useMonthlyReports } from '../hooks/useMonthlyReports';
+import { windowStats } from '../utils/seriesStats';
+import { PERFORMANCE_SCHEMA_VERSION, WINDOW_MONTHS, type WindowKey } from '../utils/performanceProcessor';
 import { ScrollableTabs } from './ScrollableTabs';
 
-const BENCHMARK_DATA: Record<string, { bmk: string, YTD: number, '1Y': number, '3Y': number, '5Y': number, vol1Y: number, vol3Y: number, vol5Y: number }> = {
-  'Conservador +': { bmk: 'EAA Fund EUR Diversified Bond - Short Term', YTD: 0.79, '1Y': 1.77, '3Y': 3.32, '5Y': 1.15, vol1Y: 1.5, vol3Y: 1.6, vol5Y: 1.8 },
-  'Conservador': { bmk: 'EAA Fund EUR Cautious Allocation - Global', YTD: 3.33, '1Y': 6.55, '3Y': 5.60, '5Y': 1.58, vol1Y: 3.2, vol3Y: 3.4, vol5Y: 3.5 },
-  'Moderado': { bmk: 'EAA Fund EUR Moderate Allocation - Global', YTD: 5.79, '1Y': 11.49, '3Y': 8.15, '5Y': 3.20, vol1Y: 5.8, vol3Y: 6.0, vol5Y: 6.2 },
-  'Equilibrado': { bmk: 'EAA Fund EUR Flexible Allocation - Global', YTD: 5.89, '1Y': 12.11, '3Y': 8.51, '5Y': 3.59, vol1Y: 7.5, vol3Y: 7.8, vol5Y: 8.0 },
-  'Agresivo': { bmk: 'EAA Fund EUR Aggressive Allocation - Global', YTD: 8.91, '1Y': 17.20, '3Y': 11.11, '5Y': 5.35, vol1Y: 11.5, vol3Y: 11.2, vol5Y: 10.8 },
-  'Agresivo +': { bmk: 'MSCI World NR EUR', YTD: 11.95, '1Y': 24.92, '3Y': 18.17, '5Y': 12.41, vol1Y: 14.8, vol3Y: 14.5, vol5Y: 13.9 }
-};
-
-const PORTFOLIO_VOL_DATA: Record<string, { '1Y': number, '3Y': number, '5Y': number }> = {
-  'Conservador +': { '1Y': 1.7, '3Y': 1.8, '5Y': 1.9 },
-  'Conservador': { '1Y': 2.3, '3Y': 2.5, '5Y': 2.6 },
-  'Moderado': { '1Y': 4.7, '3Y': 4.9, '5Y': 5.1 },
-  'Equilibrado': { '1Y': 6.3, '3Y': 6.5, '5Y': 6.8 },
-  'Agresivo': { '1Y': 7.2, '3Y': 7.5, '5Y': 7.9 },
-  'Agresivo +': { '1Y': 9.7, '3Y': 10.1, '5Y': 10.5 }
-};
-
 type Period = 'YTD' | '2025' | '1Y' | '2Y' | '3Y' | '5Y' | '2009';
+
+/** Lo que necesita un punto del grafico de retorno/riesgo. */
+interface ScatterStats {
+  portVol: number | null;
+  benchRet: number | null;
+  benchVol: number | null;
+}
+
+/**
+ * Cifras del grafico de retorno/riesgo, por perfil y ventana.
+ *
+ * Antes eran dos tablas escritas a mano. Auditarlas contra las series reales
+ * dejo claro que las rentabilidades de benchmark si eran reales, pero congeladas
+ * en el cierre de junio de 2026, y que las volatilidades no lo eran: subian en
+ * escalera (1,7 / 1,8 / 1,9 ... 9,7 / 10,1 / 10,5) y se desviaban hasta 6,2
+ * puntos de la serie, o sea que el eje horizontal entero estaba inventado.
+ *
+ * Se prefiere el documento de Firestore, que el equipo refresca subiendo el
+ * Excel VL, y si no esta se calcula sobre el vlData.ts empaquetado. Las dos vias
+ * usan windowStats, asi que dan el mismo numero.
+ *
+ * La comprobacion de schemaVersion no es ceremonia: en la base de datos hay un
+ * documento anterior con volatilidades diarias, que en estas series estan
+ * sesgadas a la baja (ver seriesStats.ts). Sin la comprobacion, el grafico
+ * seguiria mostrandolas hasta la siguiente subida y nada lo delataria.
+ */
+function useScatterStats(performance: any): Record<WindowKey, ScatterStats>[] {
+  return useMemo(() => {
+    const fromDb = performance?.schemaVersion >= PERFORMANCE_SCHEMA_VERSION ? performance.profiles : null;
+
+    return PROFILES.map((name, i) => {
+      const stored = fromDb?.[name];
+      const stats = {} as Record<WindowKey, ScatterStats>;
+
+      for (const w of Object.keys(WINDOW_MONTHS) as WindowKey[]) {
+        if (stored) {
+          stats[w] = {
+            portVol: stored.volatilities?.[w] ?? null,
+            benchRet: stored.benchmark?.returns?.[w] ?? null,
+            benchVol: stored.benchmark?.volatilities?.[w] ?? null,
+          };
+          continue;
+        }
+        const months = WINDOW_MONTHS[w];
+        const port = windowStats((HISTORICAL_VL as any)[String(i)] ?? [], months);
+        const bench = windowStats((HISTORICAL_VL as any)[`b${i}`] ?? [], months);
+        stats[w] = { portVol: port.vol, benchRet: bench.ret, benchVol: bench.vol };
+      }
+
+      return stats;
+    });
+  }, [performance]);
+}
 
 const PERIODS: { id: Period; label: string }[] = [
   { id: 'YTD', label: '2026 (YTD)' },
@@ -36,7 +74,8 @@ const PERIODS: { id: Period; label: string }[] = [
 export const SectionRendimiento: React.FC<{ forcedActiveIndices?: number[]; isPrintMode?: boolean }> = ({ forcedActiveIndices, isPrintMode }) => {
   // Cifras netas de comisiones del libro AA. Si la base de datos aun no las
   // tiene, el hook devuelve las estaticas y la seccion sigue funcionando.
-  const { profileKpis, windows } = useMonthlyReports();
+  const { profileKpis, windows, performance } = useMonthlyReports();
+  const scatterStats = useScatterStats(performance);
 
   const [selectedPeriod, setSelectedPeriod] = useState<Period>('1Y');
   const [scatterPeriod, setScatterPeriod] = useState<Period>('1Y');
@@ -178,7 +217,8 @@ export const SectionRendimiento: React.FC<{ forcedActiveIndices?: number[]; isPr
       </div>
       )}
       
-      <div className={`bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg ${isPrintMode ? "p-2" : "p-5 shadow-sm"} space-y-4`}>
+      {/* En el PDF la seccion va sin tarjeta: el marco lo pone la hoja. */}
+      <div className={`bg-white dark:bg-zinc-900 ${isPrintMode ? "" : "border border-zinc-200 dark:border-zinc-700 rounded-lg p-5 shadow-sm"} space-y-4`}>
         
         {/* Controls */}
         {!isPrintMode && (
@@ -307,7 +347,7 @@ export const SectionRendimiento: React.FC<{ forcedActiveIndices?: number[]; isPr
                 Retorno vs Volatilidad
               </h3>
               <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium">
-                Comparativa estática de las carteras frente a sus benchmarks
+                Rentabilidad anualizada frente a volatilidad anualizada, calculada sobre rentabilidades mensuales
               </p>
             </div>
             <div className="w-full md:w-auto max-w-[300px]">
@@ -405,13 +445,13 @@ export const SectionRendimiento: React.FC<{ forcedActiveIndices?: number[]; isPr
                     {/* Draw benchmarks */}
                     {profileKpis.map((kpi, idx) => {
                       if (!visibleProfiles[idx]) return null;
-                      const p = kpi.name;
-                      let benchRet = 0; let benchVol = 0;
-                      if (BENCHMARK_DATA[p]) {
-                        benchRet = BENCHMARK_DATA[p][scatterPeriod as '1Y'|'3Y'|'5Y'] ?? 0;
-                        benchVol = BENCHMARK_DATA[p][scatterPeriod === '1Y' ? 'vol1Y' : scatterPeriod === '3Y' ? 'vol3Y' : 'vol5Y'];
-                      }
-                      
+                      // Sin serie suficiente no se dibuja el punto. Antes faltaba
+                      // este corte y un dato ausente se pintaba como 0, que en
+                      // este grafico es una posicion valida: parecia un benchmark
+                      // plano en lugar de un hueco.
+                      const { benchRet, benchVol } = scatterStats[idx][scatterPeriod as WindowKey];
+                      if (benchRet === null || benchVol === null) return null;
+
                       const bx = 60 + (benchVol / maxX) * 800;
                       const by = 30 + 240 - (benchRet / maxY) * 240;
                       
@@ -439,10 +479,16 @@ export const SectionRendimiento: React.FC<{ forcedActiveIndices?: number[]; isPr
                     {/* Draw portfolios */}
                     {profileKpis.map((kpi, idx) => {
                       if (!visibleProfiles[idx]) return null;
-                      // the return for portfolios based on scatterPeriod:
+                      // La rentabilidad sale del libro AA (neta de comisiones),
+                      // igual que las barras de arriba. La volatilidad sale de la
+                      // serie VL, que es la unica fuente que cubre tambien a los
+                      // benchmarks: si cada eje mezclara metodos, la comparacion
+                      // del grafico no significaria nada.
                       const scatterLabel = scatterPeriod === '3Y' ? '3 años' : scatterPeriod === '5Y' ? '5 años' : '1 año';
-                      const portRet = windowRow(scatterLabel)[idx] ?? 0;
-                      const portVol = PORTFOLIO_VOL_DATA[kpi.name][scatterPeriod as '1Y'|'3Y'|'5Y'] ?? kpi.volatility;
+                      const portRet = windowRow(scatterLabel)[idx];
+                      const { portVol } = scatterStats[idx][scatterPeriod as WindowKey];
+                      if (portRet === null || portVol === null) return null;
+
                       const cx = 60 + (portVol / maxX) * 800;
                       const cy = 30 + 240 - (portRet / maxY) * 240;
                       
@@ -550,11 +596,7 @@ export const SectionRendimiento: React.FC<{ forcedActiveIndices?: number[]; isPr
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
                         {profileKpis.map((kpi, idx) => {
-                            const p = kpi.name;
-                            let bmkName = '';
-                            if (BENCHMARK_DATA[p]) {
-                              bmkName = BENCHMARK_DATA[p].bmk;
-                            }
+                            const bmkName = BENCHMARK_SERIES[idx] ?? '';
                             return (
                                 <tr key={`bench-row-${idx}`} className="hover:bg-zinc-50 dark:bg-zinc-800/50 transition-colors">
                                     <td className="py-2.5 px-4 font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
@@ -569,7 +611,7 @@ export const SectionRendimiento: React.FC<{ forcedActiveIndices?: number[]; isPr
                 </table>
             </div>
             <div className="bg-zinc-50 dark:bg-zinc-800/50/50 p-3 text-[10px] text-zinc-500 dark:text-zinc-400 border-t border-zinc-100">
-                <p><strong>Nota:</strong> Los benchmarks se construyen utilizando índices estándar del mercado para replicar la distribución de activos objetivo de cada perfil, sin considerar comisiones de gestión ni costes transaccionales.</p>
+                <p><strong>Nota:</strong> Cada perfil se compara con la media de su categoría Morningstar, salvo Agresivo +, que se compara con el índice MSCI World NR EUR. La rentabilidad de la cartera es neta de comisiones; la del benchmark no descuenta comisiones de gestión ni costes transaccionales.</p>
             </div>
             </div>
           </details>
@@ -577,9 +619,12 @@ export const SectionRendimiento: React.FC<{ forcedActiveIndices?: number[]; isPr
         </>
         )}
       </div>
-        <div className="mt-4 text-[9px] font-medium text-zinc-400 text-left border-t border-zinc-100 pt-3">
-          * Retornos históricos de clientes reales, netos de cualquier comisión aplicable (gestión, custodia, etc).
-        </div>
+        {/* En el PDF el descargo va una sola vez, en el pie de cada hoja. */}
+        {!isPrintMode && (
+          <div className="mt-4 text-[9px] font-medium text-zinc-400 text-left border-t border-zinc-100 pt-3">
+            * Retornos históricos de clientes reales, netos de cualquier comisión aplicable (gestión, custodia, etc).
+          </div>
+        )}
     </section>
   );
 };

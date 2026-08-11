@@ -31,11 +31,13 @@ export default function App() {
       setIsPrinting(true);
       const hadDark = document.documentElement.classList.contains('dark');
       if (hadDark) document.documentElement.classList.remove('dark');
+      // La maqueta del informe mide sus bloques antes de repartirlos en hojas,
+      // asi que hay que darle un par de pasadas de layout antes de imprimir.
       setTimeout(() => {
         window.print();
         setIsPrinting(false);
         if (hadDark) document.documentElement.classList.add('dark');
-      }, 500);
+      }, 900);
     };
     window.addEventListener('generate-pdf', handleGeneratePdf);
 
