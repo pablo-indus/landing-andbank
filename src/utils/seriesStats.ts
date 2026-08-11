@@ -22,6 +22,31 @@ export interface WindowStats {
   vol: number | null;
 }
 
+/**
+ * Maxima caida desde un pico anterior, en % y negativa (-9.82 = -9,82%).
+ *
+ * Es la misma cuenta que dibuja SectionDrawdown, pero quedandose solo con el
+ * minimo. Vive aqui porque el Perfilador la necesita para las seis cifras que
+ * compara con la tolerancia del usuario: estaban escritas a mano y podian
+ * contradecir al grafico sin que nada avisara.
+ *
+ * Devuelve null si no hay serie: un cero se leeria como "esta cartera nunca ha
+ * caido".
+ */
+export function maxDrawdown(series: SeriesPoint[]): number | null {
+  if (!series?.length) return null;
+
+  let peak = 0;
+  let worst = 0;
+  for (const point of series) {
+    if (point.v > peak) peak = point.v;
+    if (peak <= 0) continue;
+    const dd = (point.v / peak - 1) * 100;
+    if (dd < worst) worst = dd;
+  }
+  return worst;
+}
+
 /** Ultimo dia natural del mes "yyyy-mm". */
 const lastDayOfMonth = (ym: string): string => {
   const [y, m] = ym.split('-').map(Number);

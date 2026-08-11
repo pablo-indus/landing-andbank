@@ -1,19 +1,31 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { PROFILES, PROFILE_COLORS } from '../data/portfolioData';
-
-const MAX_DD_HISTORY = [
-  -7.66,  // Conservador +
-  -9.82,  // Conservador
-  -15.52, // Moderado
-  -20.77, // Equilibrado
-  -25.12, // Agresivo
-  -29.01  // Agresivo +
-];
+import { useMonthlyReports } from '../hooks/useMonthlyReports';
+import { maxDrawdown } from '../utils/seriesStats';
 
 export const SectionPerfilador: React.FC<{ isPrintMode?: boolean }> = ({ isPrintMode }) => {
+  // Las mismas curvas que dibuja el grafico de Drawdown: las de la ultima subida
+  // del libro VL, o las empaquetadas si aun no hay documento. Antes eran seis
+  // cifras escritas a mano en este archivo, que solo cambiaban desplegando y que
+  // podian contradecir al grafico sin que nada avisara.
+  const { vlSeries } = useMonthlyReports();
   const [tolerancia, setTolerancia] = useState<number>(-12);
   const [showToast, setShowToast] = useState(false);
   const [toastProfile, setToastProfile] = useState('');
+
+  const profileDd = useMemo(
+    () =>
+      PROFILES.map((_, idx) => {
+        const series = (vlSeries as any)[String(idx)] ?? [];
+        return {
+          dd: maxDrawdown(series),
+          // Cada cartera arranca en un año distinto (de 2010 a 2018): decir
+          // "desde 2009" para las seis daria por comparable lo que no lo es.
+          since: series.length ? series[0].d.slice(0, 4) : null,
+        };
+      }),
+    [vlSeries]
+  );
 
   useEffect(() => {
     if (showToast) {
@@ -25,11 +37,15 @@ export const SectionPerfilador: React.FC<{ isPrintMode?: boolean }> = ({ isPrint
   if (isPrintMode) return null;
 
   // Encontrar el perfil más agresivo que cumpla con la tolerancia
-  // La tolerancia es un número negativo (ej. -12). 
-  // Un perfil cumple si su MAX_DD >= tolerancia (ej. -9.82 >= -12)
-  let recommendedIdx = 0;
-  for (let i = MAX_DD_HISTORY.length - 1; i >= 0; i--) {
-    if (MAX_DD_HISTORY[i] >= tolerancia) {
+  // La tolerancia es un número negativo (ej. -12).
+  // Un perfil cumple si su caída máxima >= tolerancia (ej. -9.82 >= -12)
+  // Con una tolerancia de 0% no cumple ninguno: antes se recomendaba igualmente
+  // el primero, porque el indice arrancaba en 0 y el aviso de "ninguna cumple"
+  // no llegaba a mostrarse nunca.
+  let recommendedIdx = -1;
+  for (let i = profileDd.length - 1; i >= 0; i--) {
+    const { dd } = profileDd[i];
+    if (dd !== null && dd >= tolerancia) {
       recommendedIdx = i;
       break;
     }
@@ -121,11 +137,11 @@ export const SectionPerfilador: React.FC<{ isPrintMode?: boolean }> = ({ isPrint
 
           <div className="space-y-3 mt-6">
             <p className="text-[10px] font-bold text-zinc-800 dark:text-zinc-200 uppercase tracking-wider mb-2">
-              Evaluación por perfil (Histórico desde 2009)
+              Evaluación por perfil (histórico completo de cada cartera)
             </p>
             {PROFILES.map((pName, idx) => {
-              const dd = MAX_DD_HISTORY[idx];
-              const passes = dd >= tolerancia;
+              const { dd, since } = profileDd[idx];
+              const passes = dd !== null && dd >= tolerancia;
               const isRecommended = idx === recommendedIdx;
               
               return (
@@ -149,13 +165,20 @@ export const SectionPerfilador: React.FC<{ isPrintMode?: boolean }> = ({ isPrint
                         Recomendada
                       </span>
                     )}
+                    {since && (
+                      <span className="text-[9px] font-medium text-zinc-400 tracking-wide">
+                        desde {since}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-4">
                     <span className="text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400">
-                      {dd.toFixed(1).replace('.', ',')}%
+                      {dd === null ? 'n/d' : `${dd.toFixed(1).replace('.', ',')}%`}
                     </span>
                     <span className="w-4 h-4 rounded-full flex items-center justify-center">
-                      {passes ? (
+                      {dd === null ? (
+                        <span className="text-[10px] font-bold text-zinc-300">—</span>
+                      ) : passes ? (
                         <svg className="w-3 h-3 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                         </svg>

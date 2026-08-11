@@ -83,6 +83,32 @@ export interface AssetAllocationSnapshot {
   rows: AssetAllocationRow[];
 }
 
+/**
+ * Matriz de correlaciones de un perfil.
+ *
+ * `matrix` es cuadrada y simetrica, con unos en la diagonal, aunque el archivo
+ * de origen solo traiga el triangulo inferior y la seccion solo pinte ese.
+ */
+export interface CorrelationMatrix {
+  labels: string[];
+  matrix: number[][];
+}
+
+/**
+ * Una fecha del Style Box: por perfil, [tamaño, estilo].
+ *
+ * El par va en ese orden porque es el que traia el archivo estatico y el que
+ * espera `SectionStyleBox`: el primero es el eje Y (Small/Mid/Large) y el
+ * segundo el eje X (Value/Core/Growth).
+ */
+export interface StyleBoxSnapshot {
+  /** Fecha de la foto, "dd/mm/yyyy", tal y como se enseña en las pestañas. */
+  date: string;
+  /** "yyyy-mm-dd" para ordenar y para no repetir fecha entre subidas. */
+  period: string;
+  scores: Record<string, [number, number]>;
+}
+
 export interface CreditFundItem {
   name: string;
   isin: string;

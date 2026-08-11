@@ -11,6 +11,8 @@ import { processChangesExcel } from '../utils/changesProcessor';
 import { processContributorsExcel } from '../utils/contributorsProcessor';
 import { processReturnsExcel } from '../utils/returnsProcessor';
 import { processAllocationExcel } from '../utils/allocationProcessor';
+import { processStyleBoxExcel } from '../utils/styleBoxProcessor';
+import { processCorrelationExcel } from '../utils/correlationProcessor';
 
 interface AdminModalProps {
   onClose: () => void;
@@ -32,6 +34,8 @@ type ReportType =
   | 'contribuidores'
   | 'rentabilidades'
   | 'rendimiento'
+  | 'stylebox'
+  | 'correlaciones'
   | 'historico-json';
 
 const REPORT_TYPES: { id: ReportType; label: string; hint: string; accept: string }[] = [
@@ -63,6 +67,18 @@ const REPORT_TYPES: { id: ReportType; label: string; hint: string; accept: strin
     id: 'rendimiento',
     label: 'Rendimientos (carteras y benchmarks)',
     hint: 'Ej. VL - Carteras y Benchmarks.xlsx — volatilidades y benchmarks del grafico de riesgo.',
+    accept: '.xlsx,.xls',
+  },
+  {
+    id: 'stylebox',
+    label: 'Style Box (Morningstar)',
+    hint: 'Ej. Datos_Box_1_Year.xlsx — el export cubre un año, se suma al historico sin borrar los meses anteriores.',
+    accept: '.xlsx,.xls',
+  },
+  {
+    id: 'correlaciones',
+    label: 'Matriz de correlaciones',
+    hint: 'Ej. CorrelacionesGestionadas.xlsx — una hoja por perfil, de Conservador + a Agresivo +. Reemplaza las seis matrices.',
     accept: '.xlsx,.xls',
   },
   {
@@ -337,6 +353,65 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
     );
   };
 
+  /**
+   * Style Box: se **suma** al historico, no lo reemplaza.
+   *
+   * El export de Morningstar cubre un año movil, asi que reemplazar el
+   * documento entero borraria un mes por cada subida y la seccion se quedaria
+   * siempre con doce pestañas moviendose hacia adelante. Las fechas que ya
+   * estaban se pisan con las del archivo nuevo (Morningstar revisa las
+   * puntuaciones cuando llegan las carteras definitivas de los fondos).
+   */
+  const uploadStyleBox = async (f: File) => {
+    const data = await processStyleBoxExcel(f);
+
+    const ref = doc(db, 'monthly_reports', 'style_box_data');
+    const snap = await getDoc(ref);
+    const previous: any[] =
+      snap.exists() && snap.data().schemaVersion === data.schemaVersion
+        ? (snap.data().entries ?? [])
+        : [];
+
+    const incoming = new Set(data.entries.map((e) => e.period));
+    const entries = [...data.entries, ...previous.filter((e: any) => !incoming.has(e.period))].sort(
+      (a, b) => String(b.period).localeCompare(String(a.period))
+    );
+
+    await setDoc(ref, {
+      schemaVersion: data.schemaVersion,
+      entries,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const added = entries.length - previous.length;
+    return (
+      `Style Box actualizado hasta ${data.asOf}: ${data.entries.length} fecha(s) en el archivo, ` +
+      `${entries.length} en el historico (${added} nueva(s)).`
+    );
+  };
+
+  /**
+   * Correlaciones: el archivo trae los seis perfiles, asi que reemplaza entero.
+   *
+   * El mensaje enumera perfil, numero de fondos y primer fondo porque las hojas
+   * del export no se pueden identificar por su nombre —Excel las llama a todas
+   * igual y las numera— y el reparto se hace por posicion. Si un dia el export
+   * saliera en otro orden, la seccion pintaria matrices creibles del perfil
+   * equivocado; leyendo esa lista se ve en dos segundos.
+   */
+  const uploadCorrelaciones = async (f: File) => {
+    const data = await processCorrelationExcel(f);
+
+    await setDoc(doc(db, 'monthly_reports', 'correlation_data'), {
+      schemaVersion: data.schemaVersion,
+      profiles: data.profiles,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const detail = data.summary.map((s) => `${s.profile}: ${s.funds} (1. ${s.first})`).join(' · ');
+    return `Correlaciones actualizadas. ${detail}.${data.orderWarning ? ` ${data.orderWarning}` : ''}`;
+  };
+
   const handleUpload = async () => {
     if (!file) {
       setError('Selecciona un archivo.');
@@ -354,6 +429,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
       else if (reportType === 'contribuidores') message = await uploadContribuidores(file);
       else if (reportType === 'rentabilidades') message = await uploadRentabilidades(file);
       else if (reportType === 'rendimiento') message = await uploadRendimiento(file);
+      else if (reportType === 'stylebox') message = await uploadStyleBox(file);
+      else if (reportType === 'correlaciones') message = await uploadCorrelaciones(file);
       else message = await uploadHistoricalJson(file);
 
       setUploadMessage(message);

@@ -2,9 +2,11 @@
 
 Documento de traspaso. Si empiezas una conversacion nueva, lee SOLO este archivo:
 contiene el estado actual, lo que falta y las trampas ya descubiertas.
-Ultima actualizacion: 11 agosto 2026 (cabecera, pie y estilo corporativos; ese mismo
-dia, antes, el informe PDF rehecho: orden, paginacion propia, portada corporativa,
-siempre en claro, y logo).
+Ultima actualizacion: 11 agosto 2026 (Perfilador, Style Box y Correlacion
+conectados a Firestore, y escala de color nueva en la matriz; ese mismo dia,
+antes: cabecera, pie y estilo corporativos, y el informe PDF rehecho con orden,
+paginacion propia, portada corporativa y logo). **Ya no queda ninguna seccion
+leyendo datos escritos a mano.**
 
 ---
 
@@ -29,8 +31,10 @@ Excel -> parser determinista (src/utils/) -> Firebase Auth -> Firestore -> hook 
 
 **Documentos especiales** en `monthly_reports` (no son periodos): `returns_data`
 (series netas del libro AA), `allocation_data` (composicion y asset allocation, del
-mismo libro), `performance_data` (volatilidades y benchmarks del libro VL) y
-`vl_series` (las curvas diarias del mismo libro VL, para Backtest y Drawdown).
+mismo libro), `performance_data` (volatilidades y benchmarks del libro VL),
+`vl_series` (las curvas diarias del mismo libro VL, para Backtest y Drawdown),
+`style_box_data` (las fotos mensuales del Style Box de Morningstar) y
+`correlation_data` (las seis matrices de correlacion).
 
 `performance_data` y `vl_series` salen de la **misma** subida pero no son lo
 mismo: el primero guarda **estadisticas por ventana** (1Y/3Y/5Y) y el segundo los
@@ -71,6 +75,12 @@ las dos como si fueran lo mismo ya ha causado un fallo (ver seccion 4).
 | Logo sobre fondo oscuro | `public/logo-knockout.png`, la marca en blanco con fondo transparente |
 | Despliegue | `netlify.toml` en el repo. Falta enlazar el sitio con GitHub desde el panel |
 | Backtest y Drawdown conectados a Firestore | Si, documento `vl_series`. Caen a `vlData.ts` si no esta |
+| Perfilador conectado a Firestore | Si. Las seis caidas maximas se calculan de las mismas series que Drawdown |
+| Parser del Style Box | Funciona. 12 fechas, 6 perfiles. Reproduce el estatico en las 72 celdas |
+| Style Box conectado a Firestore | Si, documento `style_box_data`. Cae a `styleBoxData.ts` si no esta |
+| Parser de correlaciones | Funciona. 6 hojas, matrices simetricas de 11 a 28 fondos |
+| Correlacion conectada a Firestore | Si, documento `correlation_data`. Cae a `corrData.ts` si no esta |
+| Escala de color de la matriz | Rehecha en HSL: casi blanco en -1, naranja apagado en 0, rojo corporativo en +1, con leyenda |
 
 **Validaciones independientes que se pasaron** (no fiarse solo del mensaje verde):
 
@@ -96,6 +106,16 @@ las dos como si fueran lo mismo ya ha causado un fallo (ver seccion 4).
   Backtest las suyas.
 - Cambio de `xlsx`: los cinco parsers (rentabilidades, cambios, contribuidores,
   composicion/allocation y benchmarks) pasan sus scripts con la version 0.20.3.
+- Style Box: las 72 celdas del archivo de Morningstar coinciden con las que
+  habia escritas a mano (`node scripts/test-stylebox-parser.ts`). No basta con
+  contar fechas: las dos columnas de cada perfil son intercambiables a ojo y
+  darles la vuelta moveria cada punto a su reflejo sin que fallara nada.
+- Correlaciones: las seis matrices son cuadradas, simetricas, con unos en la
+  diagonal y todos los valores dentro de [-1, 1]. Y como el reparto hoja ->
+  perfil se hace **por posicion**, se comprueba ademas que las listas de fondos
+  de cada perfil se parezcan a las de `corrData.ts`: coinciden entre el 86% y el
+  94%, asi que ningun par de perfiles esta intercambiado
+  (`node scripts/test-correlation-parser.ts`).
 
 ---
 
@@ -103,28 +123,22 @@ las dos como si fueran lo mismo ya ha causado un fallo (ver seccion 4).
 
 Por orden de valor:
 
-1. **Subir el libro AA una vez** desde el panel, tipo "Rentabilidades netas (libro
-   AA)". Esa subida ahora escribe tambien `allocation_data`; hasta que exista,
-   Composicion y Asset Allocation siguen leyendo los datos empaquetados, que traen
-   errores del pipeline antiguo (por ejemplo MERCHFONDO aparece con peso 0 en 51 de
-   las 61 fechas). El parser nuevo lee esas celdas bien.
-2. **Tres secciones no se enteran de una subida.** Una subida mensual actualiza
-   Rendimiento, KpiStrip, Cambios, Credito, Contribuidores, Composicion, Asset
-   Allocation y —desde el 11 de agosto de 2026— Backtest y Drawdown. Las tres que
-   quedan leen de archivos del repo y solo cambian reconstruyendo y desplegando:
+1. **Subir los archivos una vez** desde el panel. Ya no queda ninguna seccion
+   leyendo datos escritos a mano —las siete subidas cubren la web entera— pero
+   **una seccion no cambia hasta que su archivo se sube al menos una vez**:
+   mientras no exista su documento, sigue pintando los datos empaquetados en el
+   repo, que son los del ultimo despliegue.
 
-   | Seccion | De donde lee | Como se actualiza hoy |
-   |---|---|---|
-   | Perfilador | `MAX_DD_HISTORY`, seis cifras en el propio componente | a mano en `SectionPerfilador.tsx:4` |
-   | Correlacion | `corrData.ts` | a mano; no hay parser ni tipo de subida |
-   | Style Box | `styleBoxData.ts` | a mano; no hay parser ni tipo de subida |
+   | Falta subir | Que desbloquea |
+   |---|---|
+   | Rentabilidades netas (libro AA) | Composicion y Asset Allocation, hoy con errores del pipeline antiguo (MERCHFONDO con peso 0 en 51 de las 61 fechas) |
+   | Style Box (Morningstar) | El historico deja de ser doce fechas congeladas y empieza a acumular |
+   | Matriz de correlaciones | Las seis matrices, hoy las del ultimo despliegue |
 
-   Las tres pintan cifras reales, pero congeladas en el ultimo despliegue. La de
-   Perfilador es la mas delicada: son seis maximas caidas historicas escritas a
-   mano que **deberian** salir de las mismas series que dibuja Drawdown, asi que
-   pueden contradecirse entre si sin que nada avise.
+   El Perfilador es el unico que no necesita subida propia: sale de las mismas
+   series que Drawdown, asi que se actualiza con el libro VL.
 
-3. **Bundle, lo que queda**: 2.939 kB, de los cuales 1,71 MB son
+2. **Bundle, lo que queda**: 2.939 kB, de los cuales 1,71 MB son
    `generatedData.ts`. Desde que Cambios, Credito, Contribuidores y Composicion
    leen de Firestore, ese archivo **ya solo sirve de respaldo** por si la base de
    datos no responde. Quitarlo bajaria el bundle a la mitad otra vez, pero deja
@@ -132,11 +146,11 @@ Por orden de valor:
    producto, no una limpieza. Lo mismo con `src/data/vlData.json` y
    `vlData.raw` (1,2 MB entre los dos), que ya no los importa nadie —esos si se
    pueden borrar sin consecuencias, no entran en el bundle, solo pesan en el repo.
-4. **Perfiles sin historico largo**: Conservador + y Agresivo + no tienen datos en
+3. **Perfiles sin historico largo**: Conservador + y Agresivo + no tienen datos en
    ventanas de 1/2/3/5 años ni en el historico anual. Aparecen sin barra, y en el
    grafico de retorno/riesgo sin punto de cartera (su benchmark si sale, porque las
    series VL de ambos si llegan). Es correcto, pero conviene que el equipo lo sepa.
-5. **Eje X del grafico de retorno/riesgo**: llega al 16% y ninguna serie pasa del
+4. **Eje X del grafico de retorno/riesgo**: llega al 16% y ninguna serie pasa del
    13,3%. Estaba dimensionado para las volatilidades inventadas, que subian a 14,8.
    Se puede apretar, es solo presentacion.
 
@@ -296,6 +310,49 @@ Por orden de valor:
   seccion y en el `rootMargin` del `IntersectionObserver` de `App.tsx`. Si crece la
   cabecera y no se mueven los otros dos, los enlaces del menu dejan el titulo
   tapado y la pestaña activa se enciende una seccion antes de tiempo.
+- **Las hojas del export de correlaciones no se pueden identificar por su
+  nombre.** Las seis se llaman "Matriz de correlaciones entre f..." y es Excel
+  quien deshace el empate numerandolas: "(1)", "(2)"... Ese numero dice en que
+  orden se exportaron, no de que perfil son. Es la unica subida cuyo reparto se
+  hace **por posicion** (ascendente: Conservador + primero, Agresivo + ultimo).
+  Si el export saliera algun dia en otro orden, la seccion pintaria matrices
+  perfectamente creibles del perfil equivocado, con fondos que esa cartera no
+  tiene. Por eso `correlationProcessor` compara la proporcion de fondos de renta
+  fija de la primera hoja con la de la ultima y avisa si parecen del reves, y por
+  eso el mensaje verde enumera perfil, numero de fondos y primer fondo: se
+  comprueba de un vistazo. El numero de fondos **no** sirve de comprobacion
+  automatica: no es creciente (11, 22, 28, 27, 25, 17), sube y baja.
+- **El color de la matriz se interpola en HSL, no en RGB.** Mezclar en RGB el
+  rojo corporativo con el crema del extremo negativo pasa por marrones
+  grisaceos, y justo en la mitad de la escala es donde se amontonan los datos
+  (las correlaciones entre fondos de una misma cartera van casi todas de 0,3 a
+  0,9). Manteniendo la saturacion alta en el centro, el naranja intermedio sigue
+  siendo un color. Los tramos son asimetricos a proposito: de 0 a +1 la
+  luminosidad recorre 76 -> 43 y de -1 a 0 solo 96 -> 76, porque el tramo
+  negativo esta casi vacio. La leyenda se genera con la **misma** funcion
+  (`SectionCorrelacion.tsx`), asi que no puede quedarse desfasada respecto a las
+  celdas.
+- **El export del Style Box es un año movil, asi que su subida suma, no
+  reemplaza.** `Datos_Box_1_Year.xlsx` trae las ultimas doce fechas y nada mas.
+  Si cada subida reemplazara el documento, el historico no crecería nunca:
+  ganaria un mes por delante y perderia uno por detras. `uploadStyleBox` fusiona
+  con lo guardado y deja que el archivo pise las fechas que ya estaban, porque
+  Morningstar revisa las puntuaciones cuando le llegan las carteras definitivas
+  de los fondos.
+- **El Style Box de Conservador + no significa nada y por eso no se pinta.** Esa
+  cartera casi no lleva renta variable: lo que mueve su puntuacion son los
+  subyacentes con bonos convertibles de alguno de sus fondos. Salta entre -100 y
+  400 de un mes a otro (en enero de 2026 cae a [-4,8, -100]). El parser lo lee
+  igual —reproduce el archivo— y es `SectionStyleBox` quien lo excluye, asi que
+  son cinco recuadros y no seis. Las puntuaciones de Morningstar van de -100 a
+  400 y el recuadro de 3x3 solo cubre de 0 a 300, con los cortes en 100 y 200.
+- **El Perfilador decia "Histórico desde 2009" y ninguna cartera llega a 2009.**
+  Las series empiezan entre 2010 (Conservador) y 2018 (Agresivo +), asi que la
+  caida maxima de Agresivo + no ha pasado por el 2020 completo ni por 2011 y no
+  es comparable con las demas. Ahora cada fila dice desde que año hay datos.
+  Ademas, con la tolerancia en 0% no cumple ningun perfil y aun asi se
+  recomendaba el primero: el indice arrancaba en 0 y el aviso "Ninguna cartera
+  cumple" no se mostraba nunca, porque se comprobaba `!== -1`.
 - **`vlData.ts` y `generatedData.ts` son necesarios**, aunque parezcan huerfanos:
   `portfolioData.ts` los importa. `vlData.ts` son 1,2 MB en una sola linea, por eso
   `wc -l` dice 0. **No abrirlos enteros** (gasta muchisimo contexto).
@@ -340,6 +397,8 @@ Por orden de valor:
 | Contribuidores | LEADING CONTRIBUTORS | **Añade** un mes |
 | Rentabilidades netas | AA GDC 5 - ACTUAL | **Reemplaza** `returns_data` y la composicion; **añade** la foto de asset allocation del mes |
 | Rendimientos (carteras y benchmarks) | VL - Carteras y Benchmarks | **Reemplaza** `performance_data` y `vl_series` |
+| Style Box (Morningstar) | Datos_Box_1_Year | **Añade** las fechas del archivo al historico |
+| Matriz de correlaciones | CorrelacionesGestionadas | **Reemplaza** las seis matrices |
 
 El mensaje verde de esta ultima dice con que cierre mensual se ha quedado. Si el
 archivo se exporto a mitad de mes, ese mes no cuenta: se usa el ultimo completo.
@@ -366,6 +425,8 @@ node scripts/inspect-excel.mjs "<ruta>" dump <hoja>  # volcar filas
 node scripts/audit-hardcoded.ts "<AA>" "<VL>"        # cifras del codigo vs Excel
 node scripts/audit-benchmarks.ts "<VL>"              # grafico retorno/riesgo, 3 lecturas
 node scripts/test-allocation-parser.ts "<AA>"       # composicion y asset allocation
+node scripts/test-stylebox-parser.ts "<Datos_Box>"  # style box vs el estatico
+node scripts/test-correlation-parser.ts "<Correlaciones>"  # forma y reparto por perfil
 node scripts/generate-vldata.mjs "<VL>"              # regenerar vlData.ts
 node scripts/print-pdf.mjs 2 informe.pdf             # el PDF sin tocar el navegador
 ```

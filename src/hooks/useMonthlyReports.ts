@@ -11,8 +11,13 @@ import {
   HISTORICAL_VL,
   cleanCompositionSnapshots,
 } from '../data/portfolioData';
+import { STYLE_BOX_DATA } from '../data/styleBoxData';
+import { FUND_CORR } from '../data/corrData';
 import { ALLOCATION_SCHEMA_VERSION } from '../utils/allocationProcessor';
 import { VL_SERIES_SCHEMA_VERSION } from '../utils/performanceProcessor';
+import { STYLE_BOX_SCHEMA_VERSION } from '../utils/styleBoxProcessor';
+import { CORRELATION_SCHEMA_VERSION } from '../utils/correlationProcessor';
+import type { CorrelationMatrix, StyleBoxSnapshot } from '../types';
 import { expandAll } from '../data/expandSeries';
 
 /**
@@ -33,6 +38,8 @@ export const PERFORMANCE_DOC_ID = 'performance_data';
 export const RETURNS_DOC_ID = 'returns_data';
 export const ALLOCATION_DOC_ID = 'allocation_data';
 export const VL_SERIES_DOC_ID = 'vl_series';
+export const STYLE_BOX_DOC_ID = 'style_box_data';
+export const CORRELATION_DOC_ID = 'correlation_data';
 
 const MONTH_TO_NUM: Record<string, number> = {
   enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6,
@@ -210,6 +217,49 @@ function adaptVlSeries(vl: any): typeof HISTORICAL_VL {
   }
 }
 
+/**
+ * Style Box empaquetado, con la fecha tambien en formato ordenable.
+ *
+ * El archivo estatico solo trae "dd/mm/yyyy" porque es lo que se enseña en las
+ * pestañas; el documento de Firestore guarda ademas `period` para poder ordenar
+ * y para no repetir fecha entre subidas. Se completa aqui para que la seccion
+ * no tenga que distinguir de donde vienen los datos.
+ */
+const STATIC_STYLE_BOX: StyleBoxSnapshot[] = STYLE_BOX_DATA.map((entry) => {
+  const [d, m, y] = entry.date.split('/');
+  const scores: Record<string, [number, number]> = {};
+  for (const [profile, pair] of Object.entries(entry.scores)) scores[profile] = [pair[0], pair[1]];
+  return { date: entry.date, period: `${y}-${m}-${d}`, scores };
+}).sort((a, b) => b.period.localeCompare(a.period));
+
+/**
+ * Fotos mensuales del Style Box.
+ *
+ * El export de Morningstar cubre un año movil, asi que el documento las va
+ * acumulando y aqui solo hay que ordenarlas. Como en los demas documentos, una
+ * `schemaVersion` distinta significa que lo guardado es de otra forma: mejor
+ * las empaquetadas que media seccion.
+ */
+function adaptStyleBox(styleBox: any): StyleBoxSnapshot[] {
+  if (styleBox?.schemaVersion !== STYLE_BOX_SCHEMA_VERSION) return STATIC_STYLE_BOX;
+  if (!Array.isArray(styleBox.entries) || styleBox.entries.length === 0) return STATIC_STYLE_BOX;
+
+  return [...styleBox.entries].sort((a, b) => String(b.period).localeCompare(String(a.period)));
+}
+
+/**
+ * Matrices de correlacion por perfil.
+ *
+ * El export trae los seis perfiles de una vez, asi que cada subida reemplaza el
+ * documento entero: no es un historico, es la foto del ultimo calculo.
+ */
+function adaptCorrelation(correlation: any): Record<string, CorrelationMatrix> {
+  const fallback = FUND_CORR as Record<string, CorrelationMatrix>;
+  if (correlation?.schemaVersion !== CORRELATION_SCHEMA_VERSION) return fallback;
+  if (!correlation.profiles || Object.keys(correlation.profiles).length === 0) return fallback;
+  return correlation.profiles as Record<string, CorrelationMatrix>;
+}
+
 export interface MonthlyReportsState {
   /** Todos los documentos de periodo, del mas reciente al mas antiguo. */
   reports: { id: string; data: any }[];
@@ -233,6 +283,10 @@ export interface MonthlyReportsState {
   assetAllocation: typeof ASSET_ALLOCATION_SNAPSHOTS;
   /** Curvas diarias de Backtest y Drawdown. Caen a `vlData.ts` si no hay documento. */
   vlSeries: typeof HISTORICAL_VL;
+  /** Fotos del Style Box, de la mas reciente a la mas antigua. Caen a las estaticas. */
+  styleBox: StyleBoxSnapshot[];
+  /** Matriz de correlaciones por perfil. Cae a `corrData.ts` si no hay documento. */
+  correlations: Record<string, CorrelationMatrix>;
   /** Fecha de la ultima actualizacion registrada en la base de datos. */
   lastUpdated: Date | null;
   loading: boolean;
@@ -252,6 +306,8 @@ export function useMonthlyReports(): MonthlyReportsState {
     composition: COMPOSITION_SNAPSHOTS,
     assetAllocation: ASSET_ALLOCATION_SNAPSHOTS,
     vlSeries: HISTORICAL_VL,
+    styleBox: STATIC_STYLE_BOX,
+    correlations: FUND_CORR as Record<string, CorrelationMatrix>,
     lastUpdated: null,
     loading: true,
     error: null,
@@ -278,6 +334,8 @@ export function useMonthlyReports(): MonthlyReportsState {
         let returns: any | null = null;
         let allocation: any | null = null;
         let vlSeriesDoc: any | null = null;
+        let styleBoxDoc: any | null = null;
+        let correlationDoc: any | null = null;
         let lastUpdated: Date | null = null;
 
         snapshot.forEach((docSnap) => {
@@ -302,6 +360,14 @@ export function useMonthlyReports(): MonthlyReportsState {
           }
           if (docSnap.id === VL_SERIES_DOC_ID) {
             vlSeriesDoc = data;
+            return;
+          }
+          if (docSnap.id === STYLE_BOX_DOC_ID) {
+            styleBoxDoc = data;
+            return;
+          }
+          if (docSnap.id === CORRELATION_DOC_ID) {
+            correlationDoc = data;
             return;
           }
           reports.push({ id: docSnap.id, data });
@@ -350,6 +416,8 @@ export function useMonthlyReports(): MonthlyReportsState {
           windows: adaptWindows(returns?.windows),
           ...adaptAllocation(allocation),
           vlSeries: adaptVlSeries(vlSeriesDoc),
+          styleBox: adaptStyleBox(styleBoxDoc),
+          correlations: adaptCorrelation(correlationDoc),
           lastUpdated,
           loading: false,
           error: null,

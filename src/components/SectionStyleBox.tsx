@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { STYLE_BOX_DATA } from '../data/styleBoxData';
 import { PROFILES } from '../data/portfolioData';
+import { useMonthlyReports } from '../hooks/useMonthlyReports';
 import { ScrollableTabs } from './ScrollableTabs';
 
 const MiniStyleBox = ({ sizeScore, styleScore, profile }: { key?: React.Key; sizeScore: number; styleScore: number; profile: string }) => {
@@ -76,13 +76,18 @@ const MiniStyleBox = ({ sizeScore, styleScore, profile }: { key?: React.Key; siz
 };
 
 export const SectionStyleBox: React.FC = () => {
-  const sortedData = [...STYLE_BOX_DATA].sort((a, b) => {
-    const [d1, m1, y1] = a.date.split('/');
-    const [d2, m2, y2] = b.date.split('/');
-    return new Date(`${y2}-${m2}-${d2}`).getTime() - new Date(`${y1}-${m1}-${d1}`).getTime();
-  });
+  // Las fotos de la ultima subida del export de Morningstar; si no hay
+  // documento, las empaquetadas. El hook ya las devuelve de la mas reciente a la
+  // mas antigua, que es el orden de las pestañas.
+  const { styleBox } = useMonthlyReports();
+  const [activeDate, setActiveDate] = useState<string | null>(null);
 
-  const [activeDate, setActiveDate] = useState<string>(sortedData[0].date);
+  if (styleBox.length === 0) return null;
+
+  // La pestaña arranca en la fecha mas reciente y sigue el documento: si llega
+  // un cierre nuevo mientras la pagina esta abierta, una fecha fijada al montar
+  // dejaria la seccion enseñando un mes que ya no esta en la lista.
+  const selected = styleBox.find((d) => d.date === activeDate) ?? styleBox[0];
 
   return (
     <section id="stylebox" className="pt-10 scroll-mt-28 mb-12">
@@ -103,9 +108,9 @@ export const SectionStyleBox: React.FC = () => {
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg p-5 shadow-sm space-y-6">
         {/* Date Tabs */}
         <div className="border-b border-zinc-100 pb-4">
-          <ScrollableTabs 
-            tabs={sortedData.map(d => ({ id: d.date, label: d.date }))} 
-            activeTab={activeDate} 
+          <ScrollableTabs
+            tabs={styleBox.map(d => ({ id: d.date, label: d.date }))}
+            activeTab={selected.date}
             onTabChange={(id) => setActiveDate(id)}
             baseClass="px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider rounded-md transition-all cursor-pointer whitespace-nowrap"
             activeClass="bg-red-700 text-white shadow-xs"
@@ -115,10 +120,16 @@ export const SectionStyleBox: React.FC = () => {
 
         {/* Style Boxes Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-4 gap-y-8 pt-2">
+          {/*
+            Conservador + no se pinta aunque el archivo lo traiga: su cartera
+            casi no tiene renta variable, asi que la puntuacion la mueven los
+            subyacentes con bonos convertibles de alguno de sus fondos. Salta
+            entre -100 y 400 de un mes a otro y no describe un estilo de
+            inversion; enseñarlo junto a los otros cinco invitaria a leerlo como
+            si lo hiciera.
+          */}
           {PROFILES.filter(p => p !== 'Conservador +').map((profile, idx) => {
-            const activeData = STYLE_BOX_DATA.find(d => d.date === activeDate);
-            if (!activeData) return null;
-            const scores = activeData.scores[profile as keyof typeof activeData.scores];
+            const scores = selected.scores[profile];
             if (!scores) return null;
             return (
               <MiniStyleBox 

@@ -1,9 +1,64 @@
 import React, { useState, useEffect } from 'react';
 import { PROFILES } from '../data/portfolioData';
-import { FUND_CORR } from '../data/corrData';
+import { useMonthlyReports } from '../hooks/useMonthlyReports';
+
+/**
+ * Color de una celda de la matriz.
+ *
+ * La escala va de casi blanco en -1 a rojo corporativo en +1, pasando por un
+ * naranja apagado en 0. Se interpola en HSL y no en RGB por dos motivos:
+ *
+ *   - En RGB, mezclar un rojo oscuro con un crema claro pasa por marrones
+ *     grisaceos: el tono se ensucia justo en la mitad de la escala, que es donde
+ *     estan la mayoria de los datos. Manteniendo la saturacion alta en el centro
+ *     (85%) el naranja intermedio sigue siendo un color y no un barro.
+ *   - Asi la diferencia entre dos celdas la lleva sobre todo la luminosidad, que
+ *     es la dimension que el ojo ordena mejor y la que sigue funcionando en una
+ *     impresion en blanco y negro.
+ *
+ * Los tramos no son simetricos a proposito. Las correlaciones entre fondos de
+ * una misma cartera se amontonan entre 0,3 y 0,9, asi que ese tramo se lleva
+ * dos tercios del recorrido de luminosidad (76 -> 43) y el tramo negativo, casi
+ * vacio, se queda en los claros (96 -> 76).
+ */
+const SCALE: { t: number; h: number; s: number; l: number }[] = [
+  { t: 0, h: 18, s: 65, l: 96 },   // -1: casi blanco, con un punto de calido
+  { t: 0.5, h: 24, s: 85, l: 76 }, //  0: naranja apagado
+  { t: 1, h: 2, s: 74, l: 43 },    // +1: rojo corporativo, vivo pero no negro
+];
+
+/** Luminosidad por debajo de la cual el texto va en blanco. */
+const LIGHT_TEXT_BELOW = 58;
+
+function correlationHsl(val: number): { css: string; l: number } {
+  const t = (Math.max(-1, Math.min(1, val)) + 1) / 2;
+
+  let i = 0;
+  while (i < SCALE.length - 2 && t > SCALE[i + 1].t) i++;
+  const from = SCALE[i];
+  const to = SCALE[i + 1];
+  const k = (t - from.t) / (to.t - from.t);
+
+  const mix = (a: number, b: number) => a + (b - a) * k;
+  const l = mix(from.l, to.l);
+  return { css: `hsl(${mix(from.h, to.h)}, ${mix(from.s, to.s)}%, ${l}%)`, l };
+}
+
+const cellStyle = (val: number): React.CSSProperties => {
+  const { css, l } = correlationHsl(val);
+  return { backgroundColor: css, color: l < LIGHT_TEXT_BELOW ? '#fff' : '#5b2317' };
+};
+
+/** La leyenda se dibuja con la misma funcion, para que no puedan separarse. */
+const LEGEND_STOPS = [-1, -0.5, 0, 0.5, 1];
+const legendGradient = `linear-gradient(to right, ${LEGEND_STOPS.map(
+  (v, i) => `${correlationHsl(v).css} ${(i / (LEGEND_STOPS.length - 1)) * 100}%`
+).join(', ')})`;
 
 export const SectionCorrelacion: React.FC = () => {
-  const [activeProfile, setActiveProfile] = useState<string>("Moderado");
+  // Las matrices de la ultima subida; si no hay documento, las empaquetadas.
+  const { correlations } = useMonthlyReports();
+  const [activeProfile, setActiveProfile] = useState<string>('Moderado');
 
   useEffect(() => {
     const handleApply = (e: any) => {
@@ -12,21 +67,10 @@ export const SectionCorrelacion: React.FC = () => {
     window.addEventListener('apply-profile', handleApply);
     return () => window.removeEventListener('apply-profile', handleApply);
   }, []);
-  const data = FUND_CORR[activeProfile as keyof typeof FUND_CORR];
 
-  const getColorStyle = (val: number) => {
-    // val goes from -1 to 1
-    // Yellow: rgb(250, 204, 21) -> -1
-    // Red: rgb(220, 38, 38) -> 1
-    const normalized = (val + 1) / 2; // 0 to 1
-    const r = Math.round(250 + (220 - 250) * normalized);
-    const g = Math.round(204 + (38 - 204) * normalized);
-    const b = Math.round(21 + (38 - 21) * normalized);
-    return { 
-      backgroundColor: `rgb(${r}, ${g}, ${b})`,
-      color: val > 0.5 ? '#fff' : '#451a03'
-    };
-  };
+  // En el orden de la web, no en el que vengan las claves del documento.
+  const available = PROFILES.filter((p) => correlations[p]?.labels?.length);
+  const data = correlations[activeProfile];
 
   return (
     <section id="correlacion" className="pt-10 scroll-mt-28">
@@ -46,8 +90,8 @@ export const SectionCorrelacion: React.FC = () => {
 
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg p-5 shadow-sm space-y-6">
         {/* Profile Toggles */}
-        <div className="flex flex-wrap gap-2 pb-2 border-b border-zinc-100">
-          {Object.keys(FUND_CORR).map((pName) => {
+        <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-zinc-100">
+          {available.map((pName) => {
             const isActive = activeProfile === pName;
             return (
               <button
@@ -63,6 +107,17 @@ export const SectionCorrelacion: React.FC = () => {
               </button>
             );
           })}
+
+          {/* Escala de color: sin ella los tonos solo se pueden comparar entre si. */}
+          <div className="flex items-center gap-2 ml-auto">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">-1</span>
+            <div
+              className="h-2.5 w-28 rounded-full border border-zinc-200 dark:border-zinc-700"
+              style={{ background: legendGradient }}
+              title="Escala de correlación"
+            />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">+1</span>
+          </div>
         </div>
 
         {/* Matrix */}
@@ -86,12 +141,12 @@ export const SectionCorrelacion: React.FC = () => {
                       {i + 1}. {data.labels[i]}
                     </td>
                     {row.map((val: number, j: number) => (
-                      <td key={j} className="p-0.5 border border-zinc-50">
+                      <td key={j} className="p-0.5 border border-zinc-50 dark:border-zinc-800">
                         {j <= i ? (
-                          <div 
+                          <div
                             className="w-full h-full min-h-[28px] flex items-center justify-center font-mono font-bold rounded-sm"
-                            style={getColorStyle(val)}
-                            title={`${data.labels[i]} / ${data.labels[j]}`}
+                            style={cellStyle(val)}
+                            title={`${data.labels[i]} / ${data.labels[j]}: ${val.toFixed(2)}`}
                           >
                             {i === j ? '—' : val.toFixed(2)}
                           </div>
