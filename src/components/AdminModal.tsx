@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Upload, Loader2, Key, LogOut } from 'lucide-react';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc, getDocs, collection, deleteField } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+import { db, auth, firebaseReady } from '../firebase';
 import { uploadHistoricalJson } from '../services/dataService';
 import { processPerformanceExcel } from '../utils/performanceProcessor';
 import { processCreditExcel } from '../utils/creditProcessor';
@@ -96,7 +96,9 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
 
   const [email, setEmail] = useState(adminEmail);
   const [password, setPassword] = useState('');
-  const [signedIn, setSignedIn] = useState(() => auth.currentUser !== null);
+  // Sin configuracion de Firebase no hay objeto `auth`: se comprueba antes de
+  // tocarlo, o el panel volveria a tumbar la pagina entera al abrirse.
+  const [signedIn, setSignedIn] = useState(() => firebaseReady && auth.currentUser !== null);
   const [reportType, setReportType] = useState<ReportType>('credito');
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -107,6 +109,13 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
 
   const handleSignIn = async () => {
     setError('');
+    if (!firebaseReady) {
+      setError(
+        'Esta publicacion no lleva configuracion de Firebase, asi que no se puede entrar ni subir nada. ' +
+          'Hay que cargar las siete variables VITE_FIREBASE_* en Netlify (alcance "Builds") y volver a desplegar.'
+      );
+      return;
+    }
     if (!email || !password) {
       setError('Introduce la contrasena.');
       return;

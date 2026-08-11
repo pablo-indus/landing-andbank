@@ -246,6 +246,28 @@ Por orden de valor:
   contenedor del grafico de drawdown tenia `dark:bg-zinc-800/50/30` (dos
   opacidades). En pantalla no se notaba y al imprimir salia un rectangulo negro
   tapando la curva entera.
+- **Un build sin las variables `VITE_*` dejaba la web EN BLANCO.** Vite sustituye
+  `import.meta.env.VITE_*` por su valor literal al construir, asi que una
+  variable ausente queda como `void 0` **dentro del bundle**: no es un fallo de
+  ejecucion que se pueda reintentar, es codigo ya compilado. `firebase.ts`
+  llamaba a `getAuth()` al importarse, lanzaba `auth/invalid-api-key` y la
+  excepcion ocurria antes de que React montara nada. Ni pagina, ni aviso: un
+  fallo de configuracion con aspecto de sitio roto. Paso en el primer despliegue
+  desde GitHub, el 11 de agosto de 2026.
+
+  Ahora `firebase.ts` comprueba la configuracion antes de inicializar y exporta
+  `firebaseReady`; el hook y el panel lo consultan. Sin configuracion, la web
+  carga con los datos empaquetados y ensena el aviso ambar, que es lo que este
+  documento decia que pasaba desde el principio. Ademas `vite.config.ts` avisa
+  al construir si falta alguna de las siete, para que se vea en el registro de
+  Netlify y no en la cara del equipo.
+
+  **En Netlify las variables tienen que tener alcance "Builds"**: son de tiempo
+  de construccion, no de ejecucion. Una variable guardada solo con alcance
+  "Functions" o "Runtime" no la ve Vite, y el sintoma es exactamente el mismo que
+  si no existiera. Despues de cargarlas hay que **volver a desplegar**: las
+  publicaciones ya hechas llevan los valores incrustados y no se actualizan
+  solas.
 - **Un documento de Firestore no puede pasar de 1 MiB, y el limite no avisa: la
   escritura falla entera.** Las doce curvas diarias de `vl_series` ocupan unos
   560 KiB y crecen unos 40 KiB al año, asi que hay margen para una decada larga.

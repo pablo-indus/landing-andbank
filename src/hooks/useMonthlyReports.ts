@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, firebaseReady } from '../firebase';
 import {
   PROFILES,
   PROFILE_COLORS,
@@ -258,6 +258,18 @@ export function useMonthlyReports(): MonthlyReportsState {
   });
 
   useEffect(() => {
+    // Sin configuracion de Firebase no hay a quien preguntar. Se deja de cargar
+    // y se avisa: la web se queda con los datos empaquetados y App pinta el
+    // aviso ambar de siempre, en vez de girar el "Cargando..." para siempre.
+    if (!firebaseReady) {
+      setState((prev) => ({
+        ...prev,
+        loading: false,
+        error: 'La web se ha publicado sin configuracion de Firebase.',
+      }));
+      return;
+    }
+
     const unsubscribe = onSnapshot(
       collection(db, 'monthly_reports'),
       (snapshot) => {
