@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { PROFILES, PROFILE_COLORS, HISTORICAL_VL } from '../data/portfolioData';
+import { PROFILES, PROFILE_COLORS } from '../data/portfolioData';
+import { useMonthlyReports } from '../hooks/useMonthlyReports';
 import { ScrollableTabs } from './ScrollableTabs';
 
 type Period = 'YTD' | '1Y' | '3Y' | '5Y' | 'Desde 2009';
@@ -12,6 +13,9 @@ const PERIODS: { id: Period; label: string }[] = [
 ];
 
 export const SectionDrawdown: React.FC<{ forcedActiveIndices?: number[]; isPrintMode?: boolean }> = ({ forcedActiveIndices, isPrintMode }) => {
+  // Las curvas de la ultima subida del libro VL; si no hay documento, las
+  // empaquetadas en `vlData.ts`.
+  const { vlSeries } = useMonthlyReports();
   const [activeIndicesState, setActiveIndices] = useState<number[]>([1, 2, 4]);
   const [showBenchmark, setShowBenchmark] = useState(false);
   const activeIndices = forcedActiveIndices !== undefined ? forcedActiveIndices : activeIndicesState; // default Conservador, Moderado, Agresivo
@@ -58,7 +62,7 @@ const trajectories = useMemo(() => {
       // Serie real: "b0".."b5" son los benchmarks, "0".."5" las carteras.
       // Antes el benchmark se inventaba a partir de la propia cartera.
       const seriesKey = isBenchmark ? `b${pIdx}` : String(pIdx);
-      const series = (HISTORICAL_VL as any)[seriesKey];
+      const series = (vlSeries as any)[seriesKey];
 
       // Sin serie no se dibuja nada. El respaldo anterior reconstruia la curva a
       // partir de HISTORICAL_ANNUAL/HISTORICAL_MONTHLY (cifras inventadas) y le
@@ -91,12 +95,12 @@ const trajectories = useMemo(() => {
     // asi que comparamos contra el benchmark de ese perfil. 999 es el indice que
     // el resto del componente ya pinta como "Benchmark".
     const benchmarkOf = activeIndices[0];
-    if (showBenchmark && benchmarkOf !== undefined && (HISTORICAL_VL as any)[`b${benchmarkOf}`]?.length) {
+    if (showBenchmark && benchmarkOf !== undefined && (vlSeries as any)[`b${benchmarkOf}`]?.length) {
       res[999] = makePoints(benchmarkOf, true);
     }
 
     return res;
-  }, [selectedPeriod, showBenchmark, activeIndices]);
+  }, [selectedPeriod, showBenchmark, activeIndices, vlSeries]);
 
   // SVG Chart Dimensions
   const W = 900;

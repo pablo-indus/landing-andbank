@@ -29,7 +29,13 @@ Excel -> parser determinista (src/utils/) -> Firebase Auth -> Firestore -> hook 
 
 **Documentos especiales** en `monthly_reports` (no son periodos): `returns_data`
 (series netas del libro AA), `allocation_data` (composicion y asset allocation, del
-mismo libro) y `performance_data` (volatilidades y benchmarks del libro VL).
+mismo libro), `performance_data` (volatilidades y benchmarks del libro VL) y
+`vl_series` (las curvas diarias del mismo libro VL, para Backtest y Drawdown).
+
+`performance_data` y `vl_series` salen de la **misma** subida pero no son lo
+mismo: el primero guarda **estadisticas por ventana** (1Y/3Y/5Y) y el segundo los
+**puntos diarios**. Separarlos no es capricho: las curvas ocupan unos 560 KiB y
+un documento de Firestore no puede pasar de 1 MiB.
 
 **Quien manda sobre que cifra.** Las rentabilidades de cartera que se publican son
 siempre las **netas del libro AA**. Las series VL son **brutas**: solo se usan para
@@ -64,6 +70,7 @@ las dos como si fueran lo mismo ya ha causado un fallo (ver seccion 4).
 | Tipografia | IBM Plex Sans, servida desde `public/fonts/` (no desde Google). Licencia OFL incluida |
 | Logo sobre fondo oscuro | `public/logo-knockout.png`, la marca en blanco con fondo transparente |
 | Despliegue | `netlify.toml` en el repo. Falta enlazar el sitio con GitHub desde el panel |
+| Backtest y Drawdown conectados a Firestore | Si, documento `vl_series`. Caen a `vlData.ts` si no esta |
 
 **Validaciones independientes que se pasaron** (no fiarse solo del mensaje verde):
 
@@ -101,25 +108,21 @@ Por orden de valor:
    Composicion y Asset Allocation siguen leyendo los datos empaquetados, que traen
    errores del pipeline antiguo (por ejemplo MERCHFONDO aparece con peso 0 en 51 de
    las 61 fechas). El parser nuevo lee esas celdas bien.
-2. **Cinco secciones no se enteran de una subida.** Una subida mensual actualiza
-   Rendimiento, KpiStrip, Cambios, Credito, Contribuidores, Composicion y Asset
-   Allocation. Las otras cinco leen de archivos del repo y solo cambian
-   reconstruyendo y desplegando:
+2. **Tres secciones no se enteran de una subida.** Una subida mensual actualiza
+   Rendimiento, KpiStrip, Cambios, Credito, Contribuidores, Composicion, Asset
+   Allocation y —desde el 11 de agosto de 2026— Backtest y Drawdown. Las tres que
+   quedan leen de archivos del repo y solo cambian reconstruyendo y desplegando:
 
    | Seccion | De donde lee | Como se actualiza hoy |
    |---|---|---|
-   | Backtest | `HISTORICAL_VL` (= `vlData.ts`) | `node scripts/generate-vldata.mjs "<VL>"` y desplegar |
-   | Drawdown | `HISTORICAL_VL` (= `vlData.ts`) | igual |
    | Perfilador | `MAX_DD_HISTORY`, seis cifras en el propio componente | a mano en `SectionPerfilador.tsx:4` |
    | Correlacion | `corrData.ts` | a mano; no hay parser ni tipo de subida |
    | Style Box | `styleBoxData.ts` | a mano; no hay parser ni tipo de subida |
 
-   Ojo con el matiz: Backtest y Drawdown **si** pintan series reales —no son datos
-   inventados— pero son las del `vlData.ts` empaquetado, no las de Firestore. La
-   subida "Rendimientos (carteras y benchmarks)" escribe `performance_data`, que
-   hoy solo consume Rendimiento (volatilidades y grafico retorno/riesgo). Las
-   curvas de Backtest y Drawdown seguiran siendo las del ultimo `vlData.ts`
-   generado, aunque el mensaje verde de la subida diga que todo fue bien.
+   Las tres pintan cifras reales, pero congeladas en el ultimo despliegue. La de
+   Perfilador es la mas delicada: son seis maximas caidas historicas escritas a
+   mano que **deberian** salir de las mismas series que dibuja Drawdown, asi que
+   pueden contradecirse entre si sin que nada avise.
 
 3. **Bundle, lo que queda**: 2.939 kB, de los cuales 1,71 MB son
    `generatedData.ts`. Desde que Cambios, Credito, Contribuidores y Composicion
@@ -243,6 +246,20 @@ Por orden de valor:
   contenedor del grafico de drawdown tenia `dark:bg-zinc-800/50/30` (dos
   opacidades). En pantalla no se notaba y al imprimir salia un rectangulo negro
   tapando la curva entera.
+- **Un documento de Firestore no puede pasar de 1 MiB, y el limite no avisa: la
+  escritura falla entera.** Las doce curvas diarias de `vl_series` ocupan unos
+  560 KiB y crecen unos 40 KiB al año, asi que hay margen para una decada larga.
+  `processPerformanceExcel` mide el tamaño antes de escribir y falla con un
+  mensaje claro por encima de 900 KiB; cuando llegue ese dia habra que repartir
+  las series en varios documentos. No quitar esa comprobacion: sin ella, el dia
+  que se pase, el equipo solo veria un error de la libreria de Firebase.
+- **`vl_series` guarda las series comprimidas y eso solo vale si son diarias y
+  sin huecos.** Es la misma compresion que `scripts/generate-vldata.mjs` (fecha de
+  inicio mas un valor por dia natural), y por eso `packSeries` repite su
+  comprobacion de huecos. Si faltara un dia, el desplazamiento dejaria de
+  corresponder con la fecha y **todas** las curvas posteriores saldrian corridas
+  sin que nada se quejara. `node scripts/audit-benchmarks.ts "<VL>"` compara ahora
+  tambien esas doce series, dia a dia, contra el `vlData.ts` empaquetado.
 - **La tipografia de la web es tambien la del informe.** `PrintReportLayout` monta
   su raiz con `font-sans`, y la maqueta **mide** la altura real de cada bloque para
   repartirlos en hojas. Cambiar `--font-sans` en `index.css` cambia esas medidas, y
@@ -300,7 +317,7 @@ Por orden de valor:
 | Historial de cambios | Plantilla Pagina Cambios | **Reemplaza** todo el historico |
 | Contribuidores | LEADING CONTRIBUTORS | **Añade** un mes |
 | Rentabilidades netas | AA GDC 5 - ACTUAL | **Reemplaza** `returns_data` y la composicion; **añade** la foto de asset allocation del mes |
-| Rendimientos (carteras y benchmarks) | VL - Carteras y Benchmarks | **Reemplaza** `performance_data` |
+| Rendimientos (carteras y benchmarks) | VL - Carteras y Benchmarks | **Reemplaza** `performance_data` y `vl_series` |
 
 El mensaje verde de esta ultima dice con que cierre mensual se ha quedado. Si el
 archivo se exporto a mitad de mes, ese mes no cuenta: se usa el ultimo completo.

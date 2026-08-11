@@ -299,14 +299,33 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
     // Si falta alguna serie, processPerformanceExcel dice cual. Antes se
     // comprobaba aqui que el resultado no viniera vacio, lo que solo detectaba
     // el caso de que fallaran las doce a la vez.
-    const perfData = await processPerformanceExcel(f);
+    const { performance, vlSeries } = await processPerformanceExcel(f);
+
+    const updatedAt = new Date().toISOString();
 
     await setDoc(doc(db, 'monthly_reports', 'performance_data'), {
-      ...perfData,
-      updatedAt: new Date().toISOString(),
+      ...performance,
+      updatedAt,
     });
 
-    return `Volatilidades y benchmarks actualizados con el cierre de ${perfData.asOf ?? 'la ultima fecha del archivo'}.`;
+    /*
+      Las curvas diarias van en su propio documento porque son grandes (unos
+      560 KiB) y porque no las lee lo mismo: `performance_data` lo consume el
+      grafico de retorno/riesgo, y esto Backtest y Drawdown. Antes esas dos
+      secciones dibujaban el `vlData.ts` empaquetado y una subida no las
+      cambiaba: el mensaje salia verde y las curvas seguian acabando en el
+      cierre anterior.
+    */
+    await setDoc(doc(db, 'monthly_reports', 'vl_series'), {
+      ...vlSeries,
+      updatedAt,
+    });
+
+    const days = vlSeries.series['0']?.v.length ?? 0;
+    return (
+      `Volatilidades y benchmarks actualizados con el cierre de ${performance.asOf ?? 'la ultima fecha del archivo'}. ` +
+      `Curvas de Backtest y Drawdown actualizadas hasta ${vlSeries.asOf ?? '?'} (${days} dias por serie).`
+    );
   };
 
   const handleUpload = async () => {

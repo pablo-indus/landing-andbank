@@ -8,9 +8,12 @@ import {
   WINDOWS_DATA,
   COMPOSITION_SNAPSHOTS,
   ASSET_ALLOCATION_SNAPSHOTS,
+  HISTORICAL_VL,
   cleanCompositionSnapshots,
 } from '../data/portfolioData';
 import { ALLOCATION_SCHEMA_VERSION } from '../utils/allocationProcessor';
+import { VL_SERIES_SCHEMA_VERSION } from '../utils/performanceProcessor';
+import { expandAll } from '../data/expandSeries';
 
 /**
  * Fuente unica de datos para toda la landing.
@@ -29,6 +32,7 @@ import { ALLOCATION_SCHEMA_VERSION } from '../utils/allocationProcessor';
 export const PERFORMANCE_DOC_ID = 'performance_data';
 export const RETURNS_DOC_ID = 'returns_data';
 export const ALLOCATION_DOC_ID = 'allocation_data';
+export const VL_SERIES_DOC_ID = 'vl_series';
 
 const MONTH_TO_NUM: Record<string, number> = {
   enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6,
@@ -166,6 +170,46 @@ function adaptAllocation(allocation: any) {
   return { composition, assetAllocation };
 }
 
+/**
+ * Curvas diarias para Backtest y Drawdown.
+ *
+ * Se comprueba `schemaVersion` por lo mismo que en los otros documentos: mientras
+ * no se haya subido el libro VL con el parser nuevo es preferible seguir con las
+ * series empaquetadas que dibujar medio grafico.
+ *
+ * Las series llegan comprimidas (fecha de inicio y un valor por dia natural) y
+ * `expandAll` las devuelve al formato `{ d, v }` que esperan las secciones, que
+ * es el mismo que traia `vlData.ts`. Por eso las dos secciones no notan de donde
+ * vienen.
+ */
+/*
+  Expandir las doce series son unos 63.000 puntos, y este hook abre una
+  suscripcion por componente que lo llama (App, KpiStrip, Backtest, Drawdown, la
+  maqueta del informe...). Sin memoria, esa expansion se repetiria una vez por
+  seccion y ademas en cada notificacion de Firestore, aunque lo que hubiera
+  cambiado fuese otro documento. Se guarda la ultima, identificada por la fecha
+  de la subida.
+*/
+let vlCache: { key: string; series: typeof HISTORICAL_VL } | null = null;
+
+function adaptVlSeries(vl: any): typeof HISTORICAL_VL {
+  if (vl?.schemaVersion !== VL_SERIES_SCHEMA_VERSION || !vl?.series) return HISTORICAL_VL;
+
+  const key = `${vl.schemaVersion}|${vl.updatedAt ?? ''}|${vl.asOf ?? ''}`;
+  if (vlCache?.key === key) return vlCache.series;
+
+  try {
+    const series = expandAll(vl.series) as typeof HISTORICAL_VL;
+    vlCache = { key, series };
+    return series;
+  } catch (err) {
+    // Una serie con un hueco descolocaria todas las fechas posteriores sin que
+    // nada se quejara. Mejor las empaquetadas, que si estan comprobadas.
+    console.error('vl_series ilegible, se usan las series empaquetadas:', err);
+    return HISTORICAL_VL;
+  }
+}
+
 export interface MonthlyReportsState {
   /** Todos los documentos de periodo, del mas reciente al mas antiguo. */
   reports: { id: string; data: any }[];
@@ -187,6 +231,8 @@ export interface MonthlyReportsState {
   composition: typeof COMPOSITION_SNAPSHOTS;
   /** Fotos de asset allocation, de la mas reciente a la mas antigua. Cae a las estaticas. */
   assetAllocation: typeof ASSET_ALLOCATION_SNAPSHOTS;
+  /** Curvas diarias de Backtest y Drawdown. Caen a `vlData.ts` si no hay documento. */
+  vlSeries: typeof HISTORICAL_VL;
   /** Fecha de la ultima actualizacion registrada en la base de datos. */
   lastUpdated: Date | null;
   loading: boolean;
@@ -205,6 +251,7 @@ export function useMonthlyReports(): MonthlyReportsState {
     windows: WINDOWS_DATA,
     composition: COMPOSITION_SNAPSHOTS,
     assetAllocation: ASSET_ALLOCATION_SNAPSHOTS,
+    vlSeries: HISTORICAL_VL,
     lastUpdated: null,
     loading: true,
     error: null,
@@ -218,6 +265,7 @@ export function useMonthlyReports(): MonthlyReportsState {
         let performance: any | null = null;
         let returns: any | null = null;
         let allocation: any | null = null;
+        let vlSeriesDoc: any | null = null;
         let lastUpdated: Date | null = null;
 
         snapshot.forEach((docSnap) => {
@@ -238,6 +286,10 @@ export function useMonthlyReports(): MonthlyReportsState {
           }
           if (docSnap.id === ALLOCATION_DOC_ID) {
             allocation = data;
+            return;
+          }
+          if (docSnap.id === VL_SERIES_DOC_ID) {
+            vlSeriesDoc = data;
             return;
           }
           reports.push({ id: docSnap.id, data });
@@ -285,6 +337,7 @@ export function useMonthlyReports(): MonthlyReportsState {
           profileKpis: adaptKpis(returns?.kpis),
           windows: adaptWindows(returns?.windows),
           ...adaptAllocation(allocation),
+          vlSeries: adaptVlSeries(vlSeriesDoc),
           lastUpdated,
           loading: false,
           error: null,

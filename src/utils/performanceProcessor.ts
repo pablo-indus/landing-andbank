@@ -39,8 +39,62 @@ export interface PerformanceDB {
   };
 }
 
+/** Sube al cambiar la forma del documento de series diarias. */
+export const VL_SERIES_SCHEMA_VERSION = 1;
+
+/**
+ * Serie diaria comprimida, en el mismo formato que `src/data/vlData.ts`: la
+ * fecha del primer dia y un valor por dia natural. `expandSeries.ts` la
+ * devuelve a `{ d, v }`.
+ */
+export interface PackedSeries {
+  s: string;
+  v: number[];
+}
+
+export interface VlSeriesDB {
+  schemaVersion: number;
+  /** Ultimo dia del archivo, "yyyy-mm-dd". Solo informativo. */
+  asOf: string | null;
+  /** "0".."5" carteras, "b0".."b5" sus benchmarks. */
+  series: Record<string, PackedSeries>;
+}
+
+export interface PerformanceUpload {
+  performance: PerformanceDB;
+  vlSeries: VlSeriesDB;
+}
+
 /** Orden de perfiles de la web; coincide con el de las listas de vlSeries. */
 const PROFILES = ['Conservador +', 'Conservador', 'Moderado', 'Equilibrado', 'Agresivo', 'Agresivo +'];
+
+const DAY_MS = 86400000;
+
+/**
+ * Comprime una serie a { fecha de inicio, valores por dia }.
+ *
+ * Es la misma compresion que hace `scripts/generate-vldata.mjs`, incluida la
+ * comprobacion de huecos: solo vale si la serie es diaria y sin faltas, que es
+ * como las exporta Morningstar (trae tambien sabados y domingos). Si faltara un
+ * dia, el desplazamiento dejaria de corresponder con la fecha y todas las curvas
+ * posteriores saldrian corridas **sin que nada se quejara**. Por eso se
+ * comprueba en vez de darlo por hecho.
+ *
+ * Los valores se redondean a 4 decimales: sobre cifras de 100 a 600 es una
+ * precision de 1 entre 10 millones, invisible en un grafico, y ahorra la mitad
+ * del documento.
+ */
+function packSeries(series: SeriesPoint[], key: string): PackedSeries {
+  if (series.length === 0) throw new Error(`La serie "${key}" viene vacia.`);
+  const start = Date.parse(`${series[0].d}T00:00:00Z`);
+  series.forEach((p, i) => {
+    const expected = new Date(start + i * DAY_MS).toISOString().slice(0, 10);
+    if (p.d !== expected) {
+      throw new Error(`La serie "${key}" tiene un hueco: se esperaba ${expected} y vino ${p.d}.`);
+    }
+  });
+  return { s: series[0].d, v: series.map((p) => Number(p.v.toFixed(4))) };
+}
 
 /** "dd/mm/yyyy", una fecha de Excel o un numero de serie -> "yyyy-mm-dd". */
 const toIso = (value: unknown): string | null => {
@@ -86,7 +140,7 @@ function indexBySeriesName(workbook: XLSX.WorkBook): Map<string, SeriesPoint[]> 
   return index;
 }
 
-export async function processPerformanceExcel(file: File): Promise<PerformanceDB> {
+export async function processPerformanceExcel(file: File): Promise<PerformanceUpload> {
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
   const series = indexBySeriesName(workbook);
@@ -128,5 +182,46 @@ export async function processPerformanceExcel(file: File): Promise<PerformanceDB
     };
   });
 
-  return { schemaVersion: PERFORMANCE_SCHEMA_VERSION, asOf, profiles };
+  /*
+    Las curvas diarias, para Backtest y Drawdown.
+
+    Hasta ahora esas dos secciones dibujaban el `vlData.ts` empaquetado en el
+    bundle, asi que una subida mensual no las tocaba: daban el mensaje verde y
+    seguian terminando en el cierre anterior. Las estadisticas de arriba no les
+    sirven —son resumenes por ventana, no series—, asi que hay que guardar los
+    puntos.
+  */
+  const packed: Record<string, PackedSeries> = {};
+  PORTFOLIO_SERIES.forEach((name, i) => {
+    packed[String(i)] = packSeries(series.get(name)!, String(i));
+  });
+  BENCHMARK_SERIES.forEach((name, i) => {
+    packed[`b${i}`] = packSeries(series.get(name)!, `b${i}`);
+  });
+
+  const lastDay = Object.values(packed).reduce<string | null>((max, s) => {
+    const end = new Date(Date.parse(`${s.s}T00:00:00Z`) + (s.v.length - 1) * DAY_MS)
+      .toISOString()
+      .slice(0, 10);
+    return !max || end > max ? end : max;
+  }, null);
+
+  /*
+    Un documento de Firestore no puede pasar de 1 MiB y el limite no avisa: la
+    escritura falla entera. Hoy las doce series ocupan unos 560 KiB y crecen unos
+    40 KiB al año, asi que hay margen para una decada larga, pero conviene
+    enterarse por un mensaje claro y no por un error de la libreria.
+  */
+  const approxBytes = Object.values(packed).reduce((n, s) => n + s.v.length * 9 + 32, 0);
+  if (approxBytes > 900 * 1024) {
+    throw new Error(
+      `Las series diarias ocupan unos ${Math.round(approxBytes / 1024)} KiB y un documento de ` +
+        `Firestore admite 1.024 KiB. Hay que repartirlas en varios documentos antes de seguir.`
+    );
+  }
+
+  return {
+    performance: { schemaVersion: PERFORMANCE_SCHEMA_VERSION, asOf, profiles },
+    vlSeries: { schemaVersion: VL_SERIES_SCHEMA_VERSION, asOf: lastDay, series: packed },
+  };
 }

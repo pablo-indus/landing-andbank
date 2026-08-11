@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { globalSettings } from '../store';
 import { PROFILES, PROFILE_COLORS, HISTORICAL_VL } from '../data/portfolioData';
+import { useMonthlyReports } from '../hooks/useMonthlyReports';
 
 const TODAY = '2026-06-30';
 
@@ -21,14 +22,22 @@ interface Trajectory {
   approx: boolean;
 }
 
-export function buildTrajectory(profileIdx: number, isBenchmark = false): Trajectory {
-  // Las series reales de benchmark estan en las claves "b0".."b5" de vlData,
+export function buildTrajectory(
+  profileIdx: number,
+  isBenchmark = false,
+  // Las curvas llegan desde fuera: si estan en Firestore son las de la ultima
+  // subida, y si no las empaquetadas. Antes se leia `HISTORICAL_VL` aqui dentro,
+  // asi que esta seccion se quedaba con el cierre del ultimo despliegue pasara
+  // lo que pasara en la base de datos.
+  seriesByKey: typeof HISTORICAL_VL = HISTORICAL_VL
+): Trajectory {
+  // Las series reales de benchmark estan en las claves "b0".."b5",
   // una por perfil (ver scripts/generate-vldata.mjs).
   // Antes el benchmark no se leia: se inventaba a partir de la propia cartera
   // (valor * 0.9 mas una onda senoidal), por lo que nunca podia ser una
   // comparacion real.
   const seriesKey = isBenchmark ? `b${profileIdx}` : String(profileIdx);
-  const rawData = (HISTORICAL_VL as any)[seriesKey];
+  const rawData = (seriesByKey as any)[seriesKey];
 
   // Sin serie no se dibuja nada. Antes habia aqui un respaldo que reconstruia la
   // curva a partir de HISTORICAL_ANNUAL/HISTORICAL_MONTHLY, pero esas tablas
@@ -66,6 +75,9 @@ function trajValue(traj: Trajectory, d: Date): number {
 }
 
 export const SectionBacktest: React.FC<{ forcedProfileIndices?: number[]; isPrintMode?: boolean }> = ({ forcedProfileIndices, isPrintMode }) => {
+  // Las curvas de la ultima subida del libro VL; si no hay documento, las
+  // empaquetadas en `vlData.ts`.
+  const { vlSeries } = useMonthlyReports();
   const [profileIdxState, setProfileIdx] = useState<number>(2);
   const [showBenchmark, setShowBenchmark] = useState<boolean>(false);
   const [isStressTest, setIsStressTest] = useState<boolean>(false);
@@ -96,7 +108,7 @@ export const SectionBacktest: React.FC<{ forcedProfileIndices?: number[]; isPrin
   const hasBenchmark =
     showBenchmark &&
     benchmarkOf !== undefined &&
-    !!(HISTORICAL_VL as any)[`b${benchmarkOf}`]?.length;
+    !!(vlSeries as any)[`b${benchmarkOf}`]?.length;
 
   // 999 es el indice reservado que el resto del componente ya trata como "Benchmark".
   const renderIndices = hasBenchmark ? [...activeIndices, 999] : activeIndices;
@@ -104,14 +116,14 @@ export const SectionBacktest: React.FC<{ forcedProfileIndices?: number[]; isPrin
   const trajectories = useMemo(() => {
     const map: Record<number, ReturnType<typeof buildTrajectory>> = {};
     activeIndices.forEach(pIdx => {
-      map[pIdx] = buildTrajectory(pIdx);
+      map[pIdx] = buildTrajectory(pIdx, false, vlSeries);
     });
     if (hasBenchmark) {
-      map[999] = buildTrajectory(benchmarkOf, true);
+      map[999] = buildTrajectory(benchmarkOf, true, vlSeries);
     }
 
     return map;
-  }, [activeIndices, hasBenchmark, benchmarkOf]);
+  }, [activeIndices, hasBenchmark, benchmarkOf, vlSeries]);
   
   // La fecha minima es la del historico MAS CORTO de los que se pintan.
   // Importa con el benchmark activo: algunas series de benchmark empiezan despues

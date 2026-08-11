@@ -88,7 +88,12 @@ function refStats(name: string, months: number) {
 }
 
 // ---------------------------------------------------------------- lectura A
-const doc = await processPerformanceExcel(new File([readFileSync(vlPath)], basename(vlPath)) as any);
+// La subida devuelve dos documentos: las estadisticas por ventana
+// (`performance_data`, lo que compara este script) y las curvas diarias
+// (`vl_series`, que alimentan Backtest y Drawdown y se comprueban al final).
+const { performance: doc, vlSeries: uploadSeries } = await processPerformanceExcel(
+  new File([readFileSync(vlPath)], basename(vlPath)) as any
+);
 
 // ---------------------------------------------------------------- lectura B
 // vlData.ts se importa como modulo: desde que se guarda comprimido (fecha de
@@ -136,6 +141,56 @@ PROFILES.forEach((profile, i) => {
     console.log(`  *** ${profile}: el documento rotula "${doc.profiles[profile].benchmark.name}"`);
   }
 });
+
+/*
+  Las curvas diarias que la subida guardaria en `vl_series`, contra el
+  `vlData.ts` empaquetado.
+
+  Es lo que dibujan Backtest y Drawdown, y desde que la subida las escribe hay
+  dos origenes posibles: en la misma fecha los dos tienen que dar el mismo valor.
+  No se exige el mismo numero de puntos, porque el Excel puede ser mas reciente
+  que el vlData empaquetado; lo que no puede pasar es que un dia compartido
+  valga una cosa aqui y otra alla, que es justo lo que delataria una compresion
+  descolocada por un hueco.
+*/
+console.log('\nCurvas diarias (vl_series) contra vlData.ts empaquetado\n');
+console.log('serie  puntos A  puntos B  comun  desde        hasta        estado');
+
+const DAY = 86400000;
+
+for (const key of Object.keys(uploadSeries.series)) {
+  const packed = uploadSeries.series[key];
+  const mine = new Map<string, number>();
+  packed.v.forEach((v, i) => {
+    mine.set(new Date(Date.parse(`${packed.s}T00:00:00Z`) + i * DAY).toISOString().slice(0, 10), v);
+  });
+
+  const theirs = vlData[key] ?? [];
+  let shared = 0;
+  let diffs = 0;
+  let firstDiff = '';
+  for (const point of theirs) {
+    const a = mine.get(point.d);
+    if (a === undefined) continue;
+    shared++;
+    if (Math.abs(a - point.v) > 0.01) {
+      diffs++;
+      if (!firstDiff) firstDiff = `${point.d}: A=${a} B=${point.v}`;
+    }
+  }
+
+  if (diffs > 0) issues++;
+  if (shared === 0) issues++;
+
+  const last = new Date(Date.parse(`${packed.s}T00:00:00Z`) + (packed.v.length - 1) * DAY)
+    .toISOString()
+    .slice(0, 10);
+  const state = shared === 0 ? '*** SIN FECHAS COMUNES ***' : diffs === 0 ? 'coincide' : `*** ${diffs} DIFIEREN (${firstDiff}) ***`;
+  console.log(
+    `  ${key.padEnd(5)}${String(packed.v.length).padStart(8)}${String(theirs.length).padStart(10)}` +
+      `${String(shared).padStart(7)}  ${packed.s}   ${last}   ${state}`
+  );
+}
 
 console.log('\n====================================================');
 console.log(issues === 0 ? 'Sin discrepancias.' : `${issues} discrepancias detectadas.`);
