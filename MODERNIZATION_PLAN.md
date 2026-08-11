@@ -208,6 +208,21 @@ Por orden de valor:
 
 ---
 
+## 4b. Donde vive esto
+
+- Repositorio: `github.com/pablo-indus/landing-andbank`, rama `main`.
+- Web publicada: **Netlify**, `https://andbank-gd.netlify.app/`.
+- El `.env` no esta en el repo, asi que las siete variables tienen que estar
+  puestas en Netlify o el build sale sin configuracion de Firebase: la web
+  cargaria con los datos empaquetados y el panel de administracion no dejaria
+  entrar. Son `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`,
+  `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`,
+  `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID` y
+  `VITE_ADMIN_EMAIL` (estan en el `.env` local y en `.env.example` sin valores).
+- Build: `npm run build`, carpeta publicada `dist`.
+
+---
+
 ## 5. Rutina mensual del equipo
 
 1. Abrir la web, icono de llave arriba a la derecha, contraseña.
