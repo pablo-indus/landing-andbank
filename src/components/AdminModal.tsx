@@ -523,8 +523,15 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
     } catch (err: any) {
       console.error(err);
       const raw = err?.message ?? '';
+      // El aviso de copia de seguridad fallida ya explica que hacer (publicar
+      // firestore.rules) y no se debe tapar: su "Detalle" incluye el error
+      // original de Firebase, que suele decir "insufficient permissions", asi
+      // que el filtro generico de abajo lo confundiria con un problema de sesion.
+      const isBackupError = raw.startsWith('No se pudo crear la copia de seguridad');
       setError(
-        raw.includes('permission') || err?.code === 'permission-denied'
+        isBackupError
+          ? raw
+          : raw.includes('permission') || err?.code === 'permission-denied'
           ? 'Sin permisos para escribir en la base de datos. Vuelve a iniciar sesion.'
           : raw || 'No se pudo procesar el archivo.'
       );
