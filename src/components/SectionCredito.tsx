@@ -87,7 +87,7 @@ export const SectionCredito: React.FC<{ isPrintMode?: boolean }> = ({ isPrintMod
   return (
     <section id="credito" className={isPrintMode ? "" : "pt-10 scroll-mt-28 mb-12"}>
       <div className="flex items-start gap-4 border-b-2 border-zinc-900 pb-3 mb-6">
-        <span className="text-xs font-bold text-red-600 tracking-widest uppercase pt-1">09</span>
+        <span className="text-xs font-bold text-red-600 tracking-widest uppercase pt-1">08</span>
         <div>
           <h2 className="text-xl font-extrabold text-zinc-900 dark:text-zinc-100 tracking-tight">Niveles de Crédito Históricos</h2>
           <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium mt-0.5">Evolución de la calidad crediticia, Yield (YTW), Duración y perfil de riesgo de los fondos de Renta Fija</p>

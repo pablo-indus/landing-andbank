@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useMonthlyReports } from './hooks/useMonthlyReports';
+import { trackVisitOnce } from './services/usage';
 
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
@@ -24,10 +25,16 @@ export default function App() {
 
   const [isPrinting, setIsPrinting] = useState(false);
   const [printProfiles, setPrintProfiles] = useState<number[]>([]);
+  const [printBenchmark, setPrintBenchmark] = useState(false);
+
+  useEffect(() => {
+    trackVisitOnce();
+  }, []);
 
   useEffect(() => {
     const handleGeneratePdf = (e: any) => {
-      setPrintProfiles(e.detail);
+      setPrintProfiles(e.detail.profiles);
+      setPrintBenchmark(!!e.detail.withBenchmark);
       setIsPrinting(true);
       const hadDark = document.documentElement.classList.contains('dark');
       if (hadDark) document.documentElement.classList.remove('dark');
@@ -64,11 +71,11 @@ export default function App() {
       'cambios',
       'simulador',
       'drawdown',
-      'correlacion',
       'contribuidores',
       'composicion',
       'aa-global',
       'credito',
+      'correlacion',
       'stylebox',
     ];
 
@@ -124,7 +131,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-50 font-sans antialiased selection:bg-slate-800 selection:text-white">
       {isPrinting ? (
-        <PrintReportLayout profiles={printProfiles} />
+        <PrintReportLayout profiles={printProfiles} withBenchmark={printBenchmark} />
       ) : (
         <>
           {/* Top Bar */}
@@ -160,11 +167,14 @@ export default function App() {
             <SectionCambios />
             <SectionBacktest />
             <SectionDrawdown />
-            <SectionCorrelacion />
             <SectionContribuidores />
             <SectionComposicion />
             <SectionAssetAllocation />
             <SectionCredito />
+            {/* La matriz va detras de Credito: las dos hablan de la composicion
+                interna de la cartera, y antes quedaba cortando el bloque de
+                rentabilidad. */}
+            <SectionCorrelacion />
             <SectionStyleBox />
 
             {/* Permite al equipo comprobar de un vistazo si la ultima subida se aplico. */}

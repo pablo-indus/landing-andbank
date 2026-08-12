@@ -35,7 +35,10 @@ const BLOCK_GAP_PX = 12;
 const LOGO = '/logo.jpg';
 
 interface PrintReportLayoutProps {
+  /** Ya vienen ordenados de mas conservador a mas agresivo desde el dialogo. */
   profiles: number[];
+  /** Añade la comparacion contra el indice de referencia de cada perfil. */
+  withBenchmark?: boolean;
 }
 
 const SectionHeading: React.FC<{ n: number; title: string; note?: string }> = ({ n, title, note }) => (
@@ -178,7 +181,7 @@ function renderBlocks(blocks: PrintBlock[], firstOfGroup: Record<string, string>
   return out;
 }
 
-export const PrintReportLayout: React.FC<PrintReportLayoutProps> = ({ profiles }) => {
+export const PrintReportLayout: React.FC<PrintReportLayoutProps> = ({ profiles, withBenchmark = false }) => {
   // La portada mostraba "Julio 2026" escrito a mano, asi que salia mal en
   // cualquier otro mes. Ahora refleja la fecha real de los datos publicados.
   const { lastUpdated, composition, assetAllocation } = useMonthlyReports();
@@ -232,19 +235,44 @@ export const PrintReportLayout: React.FC<PrintReportLayoutProps> = ({ profiles }
       ),
     });
 
-    // 2. Backtest
-    list.push({
-      key: 'backtest',
-      body: (
-        <>
-          <SectionHeading
-            n={2}
-            title="Simulación de Backtest"
-            note={`Capital inicial ${globalSettings.backtest.initialAmount.toLocaleString('es-ES')} €`}
-          />
-          <SectionBacktest forcedProfileIndices={profiles} isPrintMode />
-        </>
-      ),
+    /*
+      2. Backtest.
+
+      Con benchmark sale un bloque por perfil, porque cada cartera tiene su
+      propio indice de referencia: seis carteras y seis indices en el mismo
+      grafico no se pueden leer, y dibujar solo el indice del primer perfil
+      —que es lo que hace la seccion en pantalla— pondria una curva junto a
+      cinco carteras con las que no tiene nada que ver.
+    */
+    const backtestGroups = withBenchmark ? profiles.map((p) => [p]) : [profiles];
+    backtestGroups.forEach((group, idx) => {
+      list.push({
+        key: `backtest-${group.join('-')}`,
+        group: withBenchmark ? 'backtest' : undefined,
+        groupTitle: 'Simulación de backtest',
+        keepWithNext: withBenchmark && idx === 0 && profiles.length > 1,
+        body: (
+          <>
+            {idx === 0 && (
+              <SectionHeading
+                n={2}
+                title="Simulación de Backtest"
+                note={`Capital inicial ${globalSettings.backtest.initialAmount.toLocaleString('es-ES')} €`}
+              />
+            )}
+            {withBenchmark && (
+              <h3 className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-800 mb-1">
+                {PROFILES[group[0]]} vs. su benchmark
+              </h3>
+            )}
+            <SectionBacktest
+              forcedProfileIndices={group}
+              forcedShowBenchmark={withBenchmark}
+              isPrintMode
+            />
+          </>
+        ),
+      });
     });
 
     // 3. Contribuidores: un bloque por perfil, que es por donde tiene sentido
@@ -289,15 +317,32 @@ export const PrintReportLayout: React.FC<PrintReportLayoutProps> = ({ profiles }
       list.push(...compBlocks);
     }
 
-    // 5. Drawdown
-    list.push({
-      key: 'drawdown',
-      body: (
-        <>
-          <SectionHeading n={5} title="Análisis de Drawdown y Estrés" note="Caída desde el último máximo" />
-          <SectionDrawdown forcedActiveIndices={profiles} isPrintMode />
-        </>
-      ),
+    // 5. Drawdown. Se reparte igual que el backtest cuando hay benchmark.
+    const drawdownGroups = withBenchmark ? profiles.map((p) => [p]) : [profiles];
+    drawdownGroups.forEach((group, idx) => {
+      list.push({
+        key: `drawdown-${group.join('-')}`,
+        group: withBenchmark ? 'drawdown' : undefined,
+        groupTitle: 'Análisis de drawdown',
+        keepWithNext: withBenchmark && idx === 0 && profiles.length > 1,
+        body: (
+          <>
+            {idx === 0 && (
+              <SectionHeading n={5} title="Análisis de Drawdown y Estrés" note="Caída desde el último máximo" />
+            )}
+            {withBenchmark && (
+              <h3 className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-800 mb-1">
+                {PROFILES[group[0]]} vs. su benchmark
+              </h3>
+            )}
+            <SectionDrawdown
+              forcedActiveIndices={group}
+              forcedShowBenchmark={withBenchmark}
+              isPrintMode
+            />
+          </>
+        ),
+      });
     });
 
     // 6. Asset allocation
@@ -318,7 +363,7 @@ export const PrintReportLayout: React.FC<PrintReportLayoutProps> = ({ profiles }
     }
 
     return list;
-  }, [profiles, compositionSnapshot, allocationSnapshot]);
+  }, [profiles, withBenchmark, compositionSnapshot, allocationSnapshot]);
 
   const signature = blocks.map((b) => b.key).join('|');
   const measureRef = useRef<HTMLDivElement>(null);

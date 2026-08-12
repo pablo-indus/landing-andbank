@@ -1,5 +1,55 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useLayoutEffect, useRef } from 'react';
 import { useMonthlyReports, formatPeriodLabel } from '../hooks/useMonthlyReports';
+
+/**
+ * Una columna de movimientos (salidas o entradas) de una decision.
+ *
+ * Cada fila lleva el nombre del fondo a la izquierda y los perfiles afectados a
+ * la derecha, y cae sola a una segunda linea cuando no cabe. Con dos fondos en
+ * la misma columna eso dejaba uno en una linea y el otro en dos, con los
+ * perfiles a distinta altura y aspecto de tabla mal montada.
+ *
+ * Aqui se mira si **alguna** fila se ha partido y, si es asi, se parten todas.
+ * Se mide sobre la maqueta natural: primero se quita la clase que fuerza el
+ * salto, se comprueba, y se vuelve a poner. Por eso se manipula la clase
+ * directamente en lugar de guardarla en un estado de React —un estado
+ * provocaria un re-render que volveria a medir sobre la maqueta ya partida, que
+ * siempre parece partida, y la clase no se quitaria nunca.
+ */
+const MovesColumn: React.FC<{ items: any[]; render: (m: any, i: number) => React.ReactNode }> = ({
+  items,
+  render,
+}) => {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const measure = () => {
+      el.classList.remove('moves-stacked');
+      if (items.length < 2) return;
+
+      const rows = Array.from(el.querySelectorAll<HTMLElement>('[data-move]'));
+      const wrapped = rows.some((row) => {
+        const name = row.firstElementChild as HTMLElement | null;
+        const meta = row.lastElementChild as HTMLElement | null;
+        return !!name && !!meta && meta !== name && meta.offsetTop > name.offsetTop;
+      });
+      if (wrapped) el.classList.add('moves-stacked');
+    };
+
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [items]);
+
+  return (
+    <div ref={ref} className="flex flex-col">
+      {items.map(render)}
+    </div>
+  );
+};
 
 export const SectionCambios: React.FC<{ isPrintMode?: boolean }> = ({ isPrintMode }) => {
   // Los datos llegan ya ordenados desde la fuente unica compartida.
@@ -52,10 +102,10 @@ export const SectionCambios: React.FC<{ isPrintMode?: boolean }> = ({ isPrintMod
       return 'bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200';
     };
 
-    const MvItem = ({ m, kind }: { m: any, kind: 'exit' | 'entry', key?: number|string }) => {
+    const MvItem = ({ m }: { m: any, key?: number|string }) => {
       return (
-        <div className="flex flex-wrap items-center justify-between gap-x-1.5 gap-y-0.5 mb-2 last:mb-0 w-full">
-          
+        <div data-move className="flex flex-wrap items-center justify-between gap-x-1.5 gap-y-0.5 mb-2 last:mb-0 w-full">
+
           {/* Bloque 1: Operación, Nombre y Asset Class */}
           <div className="flex items-center gap-1.5 flex-wrap text-[10.5px]">
             <span className={`text-[7.5px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded flex-shrink-0 ${getTypeStyles(m.type)}`}>
@@ -64,14 +114,14 @@ export const SectionCambios: React.FC<{ isPrintMode?: boolean }> = ({ isPrintMod
             <b className="font-bold text-zinc-900 dark:text-zinc-100">{m.instrument}</b>
             {m.tag && <span className="text-[9px] text-zinc-500 dark:text-zinc-400">{m.tag}</span>}
           </div>
-          
+
           {/* Bloque 2: Perfiles */}
           {m.meta && (
-            <div className="text-[9px] text-zinc-500 dark:text-zinc-400 text-left">
+            <div className="move-meta text-[9px] text-zinc-500 dark:text-zinc-400 text-left">
               · {m.meta}
             </div>
           )}
-          
+
         </div>
       );
     };
@@ -82,9 +132,10 @@ export const SectionCambios: React.FC<{ isPrintMode?: boolean }> = ({ isPrintMod
           
           <div className={`p-3 min-w-0 ${hasOut ? 'bg-[#FDF8F7]' : ''}`}>
             <h5 className={`text-[8px] font-bold tracking-wider uppercase mb-3 flex items-center gap-1.5 ${hasOut ? 'text-red-800' : 'text-zinc-400'}`}>Salidas · Reducciones</h5>
-            <div className="flex flex-col">
-              {batch.exits?.map((m: any, i: number) => <MvItem key={i} m={m} kind="exit" />)}
-            </div>
+            <MovesColumn
+              items={batch.exits ?? []}
+              render={(m, i) => <MvItem key={i} m={m} />}
+            />
           </div>
 
           <div className="flex items-center justify-center bg-gradient-to-r from-[#FDF8F7] to-[#FAF9F7] text-zinc-400 text-lg border-y md:border-y-0 md:border-x border-dashed border-zinc-200 dark:border-zinc-700 py-1 md:py-0">
@@ -93,9 +144,10 @@ export const SectionCambios: React.FC<{ isPrintMode?: boolean }> = ({ isPrintMod
           
           <div className={`p-3 min-w-0 ${hasIn ? 'bg-[#FAF9F7]' : ''}`}>
             <h5 className="text-[8px] font-bold tracking-wider uppercase mb-3 flex items-center gap-1.5 text-zinc-600 dark:text-zinc-400">Entradas · Aumentos</h5>
-            <div className="flex flex-col">
-              {batch.entries?.map((m: any, i: number) => <MvItem key={i} m={m} kind="entry" />)}
-            </div>
+            <MovesColumn
+              items={batch.entries ?? []}
+              render={(m, i) => <MvItem key={i} m={m} />}
+            />
           </div>
           
         </div>

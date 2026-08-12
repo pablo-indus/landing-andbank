@@ -9,6 +9,7 @@
   Uso (con `npm run dev` levantado):
     node scripts/print-pdf.mjs                      # perfil Moderado
     node scripts/print-pdf.mjs 0,1,2,3,4,5 todo.pdf # los seis perfiles
+    BENCHMARK=1 node scripts/print-pdf.mjs 0,4      # con su indice de referencia
 
   Variables: APP_URL (por defecto http://localhost:5173), BROWSER (ruta al
   ejecutable de Chrome o Edge).
@@ -18,7 +19,9 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const profiles = (process.argv[2] ?? '2').split(',').map(Number);
+// Ordenados de mas conservador a mas agresivo, igual que el dialogo de la web.
+const profiles = (process.argv[2] ?? '2').split(',').map(Number).sort((a, b) => a - b);
+const withBenchmark = process.env.BENCHMARK === '1';
 const out = process.argv[3] ?? 'informe.pdf';
 const APP = process.env.APP_URL ?? 'http://localhost:5173';
 // Puerto propio: con el 9222 pelado se acabaria hablando con un navegador que
@@ -120,7 +123,7 @@ await evaluate(`
   (() => {
     const realTimeout = window.setTimeout;
     window.setTimeout = () => 0;
-    window.dispatchEvent(new CustomEvent('generate-pdf', { detail: ${JSON.stringify(profiles)} }));
+    window.dispatchEvent(new CustomEvent('generate-pdf', { detail: ${JSON.stringify({ profiles, withBenchmark })} }));
     window.setTimeout = realTimeout;
     return true;
   })()

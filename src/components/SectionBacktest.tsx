@@ -1,9 +1,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { globalSettings } from '../store';
-import { PROFILES, PROFILE_COLORS, HISTORICAL_VL } from '../data/portfolioData';
+import { PROFILES, PROFILE_COLORS } from '../data/portfolioData';
 import { useMonthlyReports } from '../hooks/useMonthlyReports';
-
-const TODAY = '2026-06-30';
+import {
+  TODAY,
+  buildTrajectory,
+  trajValue,
+  simulateBacktest,
+  backtestMetrics,
+} from '../utils/backtestSim';
 
 // Los escenarios 2020 y 2022 usan datos reales de las carteras.
 // El de 2008 NO: las series de Morningstar empiezan en 2010, asi que no existe
@@ -15,66 +20,12 @@ const STRESS_SCENARIOS = [
   { id: '2008', label: 'Crisis Financiera (2008) · Simulado', start: '2008-01-01', end: '2009-03-31', simulated: true }
 ];
 
-
-interface Trajectory {
-  dates: Date[];
-  vals: number[];
-  approx: boolean;
-}
-
-export function buildTrajectory(
-  profileIdx: number,
-  isBenchmark = false,
-  // Las curvas llegan desde fuera: si estan en Firestore son las de la ultima
-  // subida, y si no las empaquetadas. Antes se leia `HISTORICAL_VL` aqui dentro,
-  // asi que esta seccion se quedaba con el cierre del ultimo despliegue pasara
-  // lo que pasara en la base de datos.
-  seriesByKey: typeof HISTORICAL_VL = HISTORICAL_VL
-): Trajectory {
-  // Las series reales de benchmark estan en las claves "b0".."b5",
-  // una por perfil (ver scripts/generate-vldata.mjs).
-  // Antes el benchmark no se leia: se inventaba a partir de la propia cartera
-  // (valor * 0.9 mas una onda senoidal), por lo que nunca podia ser una
-  // comparacion real.
-  const seriesKey = isBenchmark ? `b${profileIdx}` : String(profileIdx);
-  const rawData = (seriesByKey as any)[seriesKey];
-
-  // Sin serie no se dibuja nada. Antes habia aqui un respaldo que reconstruia la
-  // curva a partir de HISTORICAL_ANNUAL/HISTORICAL_MONTHLY, pero esas tablas
-  // contenian cifras inventadas (cada ano era un mismo numero base multiplicado
-  // por 1/2/3.5/5/7/9 segun el perfil). Es preferible no pintar nada a pintar
-  // rentabilidades que no existieron.
-  if (!rawData || rawData.length === 0) {
-    return { dates: [], vals: [], approx: true };
-  }
-
-  const step = Math.ceil(rawData.length / 400);
-  const points = rawData
-    .filter((_: any, i: number) => i % step === 0 || i === rawData.length - 1)
-    .map((pt: any) => ({ d: new Date(pt.d + 'T00:00:00Z'), val: pt.v }));
-
-  return {
-    dates: points.map((p: any) => p.d),
-    vals: points.map((p: any) => p.val),
-    approx: false
-  };
-}
-
-function trajValue(traj: Trajectory, d: Date): number {
-  const { dates, vals } = traj;
-  if (d <= dates[0]) return vals[0];
-  if (d >= dates[dates.length - 1]) return vals[vals.length - 1];
-  for (let i = 0; i < dates.length - 1; i++) {
-    if (d >= dates[i] && d <= dates[i + 1]) {
-      const frac = (d.getTime() - dates[i].getTime()) / (dates[i + 1].getTime() - dates[i].getTime());
-      const lv = Math.log(vals[i]) + frac * (Math.log(vals[i + 1]) - Math.log(vals[i]));
-      return Math.exp(lv);
-    }
-  }
-  return vals[vals.length - 1];
-}
-
-export const SectionBacktest: React.FC<{ forcedProfileIndices?: number[]; isPrintMode?: boolean }> = ({ forcedProfileIndices, isPrintMode }) => {
+export const SectionBacktest: React.FC<{
+  forcedProfileIndices?: number[];
+  isPrintMode?: boolean;
+  /** El informe puede pedir el benchmark sin que nadie toque la casilla. */
+  forcedShowBenchmark?: boolean;
+}> = ({ forcedProfileIndices, isPrintMode, forcedShowBenchmark }) => {
   // Las curvas de la ultima subida del libro VL; si no hay documento, las
   // empaquetadas en `vlData.ts`.
   const { vlSeries } = useMonthlyReports();
@@ -106,7 +57,7 @@ export const SectionBacktest: React.FC<{ forcedProfileIndices?: number[]; isPrin
   // tiene el suyo propio, asi que mezclar varios a la vez no seria interpretable.
   const benchmarkOf = activeIndices[0];
   const hasBenchmark =
-    showBenchmark &&
+    (forcedShowBenchmark ?? showBenchmark) &&
     benchmarkOf !== undefined &&
     !!(vlSeries as any)[`b${benchmarkOf}`]?.length;
 
@@ -205,93 +156,18 @@ export const SectionBacktest: React.FC<{ forcedProfileIndices?: number[]; isPrin
       return { dates: resDates, capitalSeries, valueSeriesByProfile, totalCapital: amount, finalValues };
     }
 
-    if (!startDateStr) return null;
-    const start = new Date(startDateStr);
-    const today = new Date(TODAY);
-    if (start > today) return null;
-    const events: { d: Date; amount: number }[] = [{ d: start, amount: initialAmount }];
-    if (freq !== 'none' && freqAmount > 0) {
-      let d = new Date(start);
-      while (true) {
-        d =
-          freq === 'monthly'
-            ? new Date(d.getFullYear(), d.getMonth() + 1, d.getDate())
-            : new Date(d.getFullYear(), d.getMonth() + 3, d.getDate());
-        if (d > today) break;
-        events.push({ d: new Date(d), amount: freqAmount });
-      }
-    }
-    if (lumpDateStr && lumpAmount > 0) {
-      const ld = new Date(lumpDateStr);
-      if (ld >= start && ld <= today) events.push({ d: ld, amount: lumpAmount });
-    }
-    events.sort((a, b) => a.d.getTime() - b.d.getTime());
-    
-    // We only need one capital series
-    const resDates: string[] = [];
-    const capitalSeries: number[] = [];
-    let currentCapital = 0;
-    
-    const valueSeriesByProfile: Record<number, number[]> = {};
-    const finalValues: Record<number, number> = {};
-    
-    // Initialize units for each profile
-    const unitsByProfile: Record<number, number> = {};
-    renderIndices.forEach(pIdx => {
-      unitsByProfile[pIdx] = 0;
-      valueSeriesByProfile[pIdx] = [];
-    });
-    
-    const trajRef = trajectories[activeIndices[0]];
-    const datePoints = trajRef.dates.filter(d => d >= start && d <= today);
-    if (!datePoints.find(d => d.getTime() === today.getTime())) datePoints.push(today);
-    
-    let eventIdx = 0;
-    for (let i = 0; i < datePoints.length; i++) {
-      const d = datePoints[i];
-      while (eventIdx < events.length && events[eventIdx].d <= d) {
-        const ev = events[eventIdx];
-        currentCapital += ev.amount;
-        renderIndices.forEach(pIdx => {
-          const vl = trajValue(trajectories[pIdx], ev.d);
-          unitsByProfile[pIdx] += ev.amount / vl;
-        });
-        eventIdx++;
-      }
-      resDates.push(d.toISOString().slice(0, 10));
-      capitalSeries.push(currentCapital);
-      
-      renderIndices.forEach(pIdx => {
-        const vl = trajValue(trajectories[pIdx], d);
-        valueSeriesByProfile[pIdx].push(unitsByProfile[pIdx] * vl);
-      });
-    }
-    
-    renderIndices.forEach(pIdx => {
-      finalValues[pIdx] = valueSeriesByProfile[pIdx][valueSeriesByProfile[pIdx].length - 1];
-    });
-
-    return { dates: resDates, capitalSeries, valueSeriesByProfile, totalCapital: currentCapital, finalValues };
+    // La simulacion normal vive en utils/backtestSim.ts: la comparte el
+    // PowerPoint, para que los dos formatos no puedan dar cifras distintas.
+    return simulateBacktest(
+      { initialAmount, startDateStr, freq, freqAmount, lumpDateStr, lumpAmount },
+      renderIndices,
+      trajectories
+    );
   }, [startDateStr, initialAmount, freq, freqAmount, lumpDateStr, lumpAmount, trajectories, renderIndices, isStressTest, stressScenario]);
 
   // Cifras de cada perfil, que se pintan como tarjetas en pantalla y como tabla
   // en el PDF cuando hay muchos perfiles.
-  const metricsOf = (pIdx: number) => {
-    const finalValue = simResult ? simResult.finalValues[pIdx] : 0;
-    const totalCapital = simResult ? simResult.totalCapital : 0;
-    const gain = finalValue - totalCapital;
-    const gainPct = totalCapital > 0 ? (gain / totalCapital) * 100 : 0;
-
-    let annualizedPct = 0;
-    if (totalCapital > 0 && startDateStr) {
-      const startY = new Date(startDateStr).getFullYear();
-      const endY = new Date(TODAY).getFullYear();
-      const years = Math.max(1, endY - startY + (new Date(TODAY).getMonth() - new Date(startDateStr).getMonth()) / 12);
-      annualizedPct = (Math.pow(finalValue / totalCapital, 1 / years) - 1) * 100;
-    }
-
-    return { finalValue, totalCapital, gain, gainPct, annualizedPct };
-  };
+  const metricsOf = (pIdx: number) => backtestMetrics(simResult, pIdx, startDateStr);
 
   // Seis perfiles en tarjetas son media hoja de PDF. A partir de tres se
   // resumen en una tabla, que ademas deja compararlos de un vistazo.
@@ -326,19 +202,17 @@ export const SectionBacktest: React.FC<{ forcedProfileIndices?: number[]; isPrin
     <section id="simulador" className={isPrintMode ? "" : "pt-10 scroll-mt-28"}>
       {/* En el PDF el titulo lo pone la maqueta del informe, no la seccion. */}
       {!isPrintMode && (
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
-        <div className="flex items-center gap-3">
-          <span className="bg-red-700 text-white w-8 h-8 rounded flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
-            3
-          </span>
-          <div>
-            <h2 className="text-xl font-extrabold text-zinc-900 dark:text-zinc-100 tracking-tight">
-              Backtest de Inversión
-            </h2>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium mt-0.5">
-              Simula una inversión pasada con aportaciones periódicas y calcula el patrimonio final acumulado
-            </p>
-          </div>
+      <div className="flex items-start gap-4 border-b-2 border-zinc-900 pb-3 mb-6">
+        <span className="text-xs font-bold text-red-600 tracking-widest uppercase pt-1">
+          03
+        </span>
+        <div>
+          <h2 className="text-xl font-extrabold text-zinc-900 dark:text-zinc-100 tracking-tight">
+            Backtest de Inversión
+          </h2>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium mt-0.5">
+            Simula una inversión pasada con aportaciones periódicas y calcula el patrimonio final acumulado
+          </p>
         </div>
       </div>
       )}
@@ -379,17 +253,25 @@ export const SectionBacktest: React.FC<{ forcedProfileIndices?: number[]; isPrin
         </div>
 
         {/* Form Controls */}
-        <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-lg border border-zinc-200 dark:border-zinc-700 ${isStressTest ? 'opacity-50 pointer-events-none' : ''}`}>
+        {/*
+          La casilla del benchmark va en su propia fila, encima de la rejilla.
+          Cuando estaba dentro de la primera celda, empujaba hacia abajo su
+          etiqueta y su desplegable, y el "Perfil de inversion" quedaba una
+          linea mas bajo que los otros tres campos.
+        */}
+        <div className={`bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-lg border border-zinc-200 dark:border-zinc-700 ${isStressTest ? 'opacity-50 pointer-events-none' : ''}`}>
+          <label className="flex items-center gap-2 cursor-pointer mb-3 w-fit">
+            <input
+              type="checkbox"
+              checked={showBenchmark}
+              onChange={(e) => setShowBenchmark(e.target.checked)}
+              className="w-4 h-4 text-red-600 rounded border-zinc-300 dark:border-zinc-600 focus:ring-red-600 cursor-pointer"
+            />
+            <span className="text-xs font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider">Comparar con Benchmark</span>
+          </label>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
-            <label className="flex items-center gap-2 cursor-pointer mb-2">
-              <input 
-                type="checkbox" 
-                checked={showBenchmark} 
-                onChange={(e) => setShowBenchmark(e.target.checked)}
-                className="w-4 h-4 text-red-600 rounded border-zinc-300 dark:border-zinc-600 focus:ring-red-600 cursor-pointer"
-              />
-              <span className="text-xs font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider">Comparar con Benchmark</span>
-            </label>
             <label className="block text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1">
               Perfil de Inversión
             </label>
@@ -460,6 +342,7 @@ export const SectionBacktest: React.FC<{ forcedProfileIndices?: number[]; isPrin
                 />
               )}
             </div>
+          </div>
           </div>
         </div>
 

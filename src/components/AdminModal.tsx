@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Upload, Loader2, Key, LogOut } from 'lucide-react';
+import { X, Upload, Loader2, Key, LogOut, History, RotateCcw } from 'lucide-react';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc, getDocs, collection, deleteField } from 'firebase/firestore';
 import { db, auth, firebaseReady } from '../firebase';
@@ -13,6 +13,7 @@ import { processReturnsExcel } from '../utils/returnsProcessor';
 import { processAllocationExcel } from '../utils/allocationProcessor';
 import { processStyleBoxExcel } from '../utils/styleBoxProcessor';
 import { processCorrelationExcel } from '../utils/correlationProcessor';
+import { createBackup, listBackups, restoreBackup, DOCS_TOUCHED, type BackupSummary } from '../services/backups';
 
 interface AdminModalProps {
   onClose: () => void;
@@ -21,6 +22,16 @@ interface AdminModalProps {
 const MONTH_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+];
+
+/** Documentos que no son periodos. Ver seccion 1 del plan. */
+const SPECIAL_DOC_IDS = [
+  'returns_data',
+  'allocation_data',
+  'performance_data',
+  'vl_series',
+  'style_box_data',
+  'correlation_data',
 ];
 
 /**
@@ -120,8 +131,39 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [uploadMessage, setUploadMessage] = useState('');
+  const [backups, setBackups] = useState<BackupSummary[]>([]);
+  const [restoring, setRestoring] = useState<string | null>(null);
+  const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
 
   const selectedType = REPORT_TYPES.find((t) => t.id === reportType)!;
+
+  const refreshBackups = async () => {
+    if (!firebaseReady) return;
+    try {
+      setBackups(await listBackups());
+    } catch (err) {
+      console.debug('No se pudieron leer las copias:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (signedIn) void refreshBackups();
+  }, [signedIn]);
+
+  const handleRestore = async (id: string) => {
+    setRestoring(id);
+    setError('');
+    setUploadMessage('');
+    try {
+      setUploadMessage(await restoreBackup(id));
+      setConfirmRestore(null);
+      await refreshBackups();
+    } catch (err: any) {
+      setError(err?.message ?? 'No se pudo restaurar la copia.');
+    } finally {
+      setRestoring(null);
+    }
+  };
 
   const handleSignIn = async () => {
     setError('');
@@ -412,6 +454,25 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
     return `Correlaciones actualizadas. ${detail}.${data.orderWarning ? ` ${data.orderWarning}` : ''}`;
   };
 
+  /**
+   * Documentos que esa subida va a pisar, para copiarlos antes de tocarlos.
+   *
+   * Credito, cambios y contribuidores escriben en los documentos de periodo del
+   * propio Excel, y no se sabe cuales hasta parsearlo, asi que se copian todos
+   * los periodos existentes. Los documentos especiales quedan fuera: esas
+   * subidas no los tocan, y copiar `vl_series` (560 KiB) en cada subida de
+   * credito seria arrastrar medio mega por nada.
+   */
+  const docsToBackup = async (type: ReportType): Promise<string[]> => {
+    const explicit = DOCS_TOUCHED[type];
+    if (explicit) return explicit;
+
+    const all = await getDocs(collection(db, 'monthly_reports'));
+    const ids = all.docs.map((d) => d.id);
+    if (type === 'historico-json') return ids;
+    return ids.filter((id) => !SPECIAL_DOC_IDS.includes(id));
+  };
+
   const handleUpload = async () => {
     if (!file) {
       setError('Selecciona un archivo.');
@@ -423,6 +484,27 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
     setUploadMessage('');
 
     try {
+      /*
+        Copia antes de escribir nada. Si la copia falla se para la subida: sin
+        ella, un Excel mal exportado deja la base en un estado que solo se puede
+        deshacer volviendo a encontrar el archivo bueno.
+      */
+      let backup;
+      try {
+        backup = await createBackup(await docsToBackup(reportType), selectedType.label);
+      } catch (err: any) {
+        // Se para la subida a proposito. Lo mas probable es que falten las
+        // reglas nuevas, y en ese caso el aviso tiene que decir que hacer: si
+        // esto se dejara pasar en silencio, el sistema anticagadas estaria
+        // apagado justo el dia que hiciera falta.
+        throw new Error(
+          'No se pudo crear la copia de seguridad, asi que no se ha subido nada. ' +
+            'Si es la primera vez despues de un despliegue, hay que publicar las reglas ' +
+            'de Firestore (firestore.rules) para que exista la coleccion "backups". ' +
+            `Detalle: ${err?.message ?? 'error desconocido'}`
+        );
+      }
+
       let message: string;
       if (reportType === 'credito') message = await uploadCredito(file);
       else if (reportType === 'cambios') message = await uploadCambios(file);
@@ -433,8 +515,11 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
       else if (reportType === 'correlaciones') message = await uploadCorrelaciones(file);
       else message = await uploadHistoricalJson(file);
 
-      setUploadMessage(message);
+      setUploadMessage(
+        message + (backup ? ` Copia de seguridad guardada (${backup.docIds.length} documento(s)).` : '')
+      );
       setFile(null);
+      void refreshBackups();
     } catch (err: any) {
       console.error(err);
       const raw = err?.message ?? '';
@@ -576,6 +661,69 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
                 {loading && <Loader2 size={16} className="animate-spin mr-2" />}
                 {loading ? 'Procesando archivo...' : 'Subir y Actualizar'}
               </button>
+
+              {/*
+                Cada subida deja una copia de lo que habia justo antes. Se
+                conservan las diez ultimas: restaurar devuelve esos documentos a
+                su estado anterior y no toca nada mas.
+              */}
+              <div className="border-t border-zinc-100 dark:border-zinc-800 pt-4">
+                <p className="flex items-center gap-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider mb-2">
+                  <History size={13} className="text-zinc-400" /> Deshacer una subida
+                </p>
+
+                {backups.length === 0 ? (
+                  <p className="text-[11px] text-zinc-500">
+                    Todavia no hay copias. Se crea una automaticamente antes de cada subida.
+                  </p>
+                ) : (
+                  <ul className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                    {backups.map((b) => (
+                      <li
+                        key={b.id}
+                        className="flex items-center justify-between gap-2 text-[11px] border border-zinc-200 dark:border-zinc-700 rounded px-2.5 py-1.5"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-bold text-zinc-800 dark:text-zinc-200 truncate">{b.label}</p>
+                          <p className="text-[10px] text-zinc-500">
+                            {new Date(b.createdAt).toLocaleString('es-ES', {
+                              day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                            })}
+                            {' · '}
+                            {b.docIds.length} doc.
+                          </p>
+                        </div>
+
+                        {confirmRestore === b.id ? (
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={() => handleRestore(b.id)}
+                              disabled={restoring !== null}
+                              className="px-2 py-1 bg-red-700 text-white rounded text-[10px] font-bold uppercase tracking-wider hover:bg-red-800 disabled:opacity-50 cursor-pointer flex items-center gap-1"
+                            >
+                              {restoring === b.id && <Loader2 size={11} className="animate-spin" />}
+                              Confirmar
+                            </button>
+                            <button
+                              onClick={() => setConfirmRestore(null)}
+                              className="px-2 py-1 text-zinc-500 text-[10px] font-bold uppercase tracking-wider cursor-pointer"
+                            >
+                              No
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmRestore(b.id)}
+                            className="shrink-0 flex items-center gap-1 px-2 py-1 border border-zinc-300 dark:border-zinc-600 rounded text-[10px] font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer"
+                          >
+                            <RotateCcw size={11} /> Restaurar
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </>
           )}
         </div>

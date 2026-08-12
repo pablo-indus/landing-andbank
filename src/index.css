@@ -206,3 +206,13 @@ html.dark .recharts-tooltip-item {
     page-break-before: avoid !important;
   }
 }
+
+/*
+  Historial de cambios: cuando una fila de la columna se parte en dos lineas, se
+  parten todas, para que los perfiles afectados queden a la misma altura en
+  todos los fondos de esa columna. Quien decide si hace falta es `MovesColumn`
+  en SectionCambios.tsx, que mide la maqueta natural y pone esta clase.
+*/
+.moves-stacked .move-meta {
+  flex-basis: 100%;
+}

@@ -12,13 +12,23 @@ const PERIODS: { id: Period; label: string }[] = [
   { id: 'Desde 2009', label: 'Desde 2009' }
 ];
 
-export const SectionDrawdown: React.FC<{ forcedActiveIndices?: number[]; isPrintMode?: boolean }> = ({ forcedActiveIndices, isPrintMode }) => {
+export const SectionDrawdown: React.FC<{
+  forcedActiveIndices?: number[];
+  isPrintMode?: boolean;
+  /** El informe puede pedir el benchmark sin que nadie toque la casilla. */
+  forcedShowBenchmark?: boolean;
+}> = ({ forcedActiveIndices, isPrintMode, forcedShowBenchmark }) => {
   // Las curvas de la ultima subida del libro VL; si no hay documento, las
   // empaquetadas en `vlData.ts`.
   const { vlSeries } = useMonthlyReports();
-  const [activeIndicesState, setActiveIndices] = useState<number[]>([1, 2, 4]);
+  // Mientras nadie aplique un perfil desde el Perfilador se enseña el mas
+  // conservador. Antes arrancaba con tres curvas (Conservador, Moderado y
+  // Agresivo), que es una comparativa, no un punto de partida: la seccion
+  // abria enseñando una caida del 25% de un perfil que el visitante no ha
+  // pedido.
+  const [activeIndicesState, setActiveIndices] = useState<number[]>([0]);
   const [showBenchmark, setShowBenchmark] = useState(false);
-  const activeIndices = forcedActiveIndices !== undefined ? forcedActiveIndices : activeIndicesState; // default Conservador, Moderado, Agresivo
+  const activeIndices = forcedActiveIndices !== undefined ? forcedActiveIndices : activeIndicesState;
     React.useEffect(() => {
     const handleApply = (e: any) => setActiveIndices([e.detail]);
     window.addEventListener('apply-profile', handleApply);
@@ -95,12 +105,12 @@ const trajectories = useMemo(() => {
     // asi que comparamos contra el benchmark de ese perfil. 999 es el indice que
     // el resto del componente ya pinta como "Benchmark".
     const benchmarkOf = activeIndices[0];
-    if (showBenchmark && benchmarkOf !== undefined && (vlSeries as any)[`b${benchmarkOf}`]?.length) {
+    if ((forcedShowBenchmark ?? showBenchmark) && benchmarkOf !== undefined && (vlSeries as any)[`b${benchmarkOf}`]?.length) {
       res[999] = makePoints(benchmarkOf, true);
     }
 
     return res;
-  }, [selectedPeriod, showBenchmark, activeIndices, vlSeries]);
+  }, [selectedPeriod, showBenchmark, forcedShowBenchmark, activeIndices, vlSeries]);
 
   // SVG Chart Dimensions
   const W = 900;

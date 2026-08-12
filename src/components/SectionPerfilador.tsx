@@ -39,9 +39,6 @@ export const SectionPerfilador: React.FC<{ isPrintMode?: boolean }> = ({ isPrint
   // Encontrar el perfil más agresivo que cumpla con la tolerancia
   // La tolerancia es un número negativo (ej. -12).
   // Un perfil cumple si su caída máxima >= tolerancia (ej. -9.82 >= -12)
-  // Con una tolerancia de 0% no cumple ninguno: antes se recomendaba igualmente
-  // el primero, porque el indice arrancaba en 0 y el aviso de "ninguna cumple"
-  // no llegaba a mostrarse nunca.
   let recommendedIdx = -1;
   for (let i = profileDd.length - 1; i >= 0; i--) {
     const { dd } = profileDd[i];
@@ -49,6 +46,20 @@ export const SectionPerfilador: React.FC<{ isPrintMode?: boolean }> = ({ isPrint
       recommendedIdx = i;
       break;
     }
+  }
+
+  /*
+    Si la tolerancia queda por debajo de la caida de Conservador + no cumple
+    ningun perfil, y entonces se ofrece el mas conservador que tenga datos en
+    vez de dejar la tarjeta vacia: alguien que no tolera ni un 7% de caida sigue
+    necesitando saber cual es la cartera que menos cae. El aviso de arriba dice
+    que ninguna llega a su umbral, para que la recomendacion no se lea como que
+    si lo cumple.
+  */
+  const noneQualifies = recommendedIdx === -1;
+  if (noneQualifies) {
+    const first = profileDd.findIndex((p) => p.dd !== null);
+    recommendedIdx = first;
   }
 
   return (
@@ -105,7 +116,13 @@ export const SectionPerfilador: React.FC<{ isPrintMode?: boolean }> = ({ isPrint
             <h3 className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1">
               Cartera Recomendada
             </h3>
-            
+
+            {noneQualifies && recommendedIdx !== -1 && (
+              <p className="text-[10px] font-medium text-amber-700 dark:text-amber-400 mb-2">
+                Ninguna cartera se ha mantenido dentro de esa caída. Se muestra la que menos ha caído.
+              </p>
+            )}
+
             {recommendedIdx !== -1 ? (
               <div>
                 <div className="flex items-center gap-3">

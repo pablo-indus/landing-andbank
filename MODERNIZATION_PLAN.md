@@ -2,11 +2,17 @@
 
 Documento de traspaso. Si empiezas una conversacion nueva, lee SOLO este archivo:
 contiene el estado actual, lo que falta y las trampas ya descubiertas.
-Ultima actualizacion: 11 agosto 2026 (Perfilador, Style Box y Correlacion
-conectados a Firestore, y escala de color nueva en la matriz; ese mismo dia,
-antes: cabecera, pie y estilo corporativos, y el informe PDF rehecho con orden,
-paginacion propia, portada corporativa y logo). **Ya no queda ninguna seccion
-leyendo datos escritos a mano.**
+Ultima actualizacion: 12 agosto 2026 (informe en PowerPoint, comparacion con
+benchmark en los informes, copias automaticas antes de cada subida, contador de
+uso y la tanda de arreglos de formato que reviso el equipo). El 11 de agosto,
+antes: Perfilador, Style Box y Correlacion conectados a Firestore, escala de
+color nueva en la matriz, estilo corporativo e informe PDF rehecho. **Ya no
+queda ninguna seccion leyendo datos escritos a mano.**
+
+> **Antes de nada, si acabas de desplegar:** hay que publicar `firestore.rules`.
+> Las colecciones `backups` y `usage_stats` son nuevas y sin reglas no existen.
+> Sin ellas **el panel no deja subir nada**, porque la copia de seguridad previa
+> falla y la subida se para a proposito.
 
 ---
 
@@ -67,7 +73,7 @@ las dos como si fueran lo mismo ya ha causado un fallo (ver seccion 4).
 | Composicion y Asset Allocation conectadas a Firestore | Si, documento `allocation_data`. Caen a los estaticos si no esta |
 | Datos inventados en el repo | Eliminados (`HISTORICAL_ANNUAL`, `HISTORICAL_MONTHLY`) |
 | Tamaño del bundle | 4.620 kB -> 2.939 kB (gzip 1.136 -> 731). `vlData.ts` pasa de 2,41 MB a 0,54 MB |
-| Avisos de seguridad de npm | 0. `xlsx` viene de la distribucion oficial de SheetJS (0.20.3) y `nanoid` esta parcheado |
+| Avisos de seguridad de npm | 2 (altos), heredados de `pptxgenjs`. No llegan al navegador: ver seccion 4 |
 | Informe PDF | Rehecho: A4 vertical, orden nuevo, paginacion propia, cabecera y pie con numero de hoja |
 | Logo | `public/logo.jpg`. El `logo.png` anterior estaba corrupto y nadie lo usa ya |
 | Estilo corporativo de la web | Cabecera, pie y portada rehechos. Paleta y tipografia unificadas en `index.css` |
@@ -81,6 +87,13 @@ las dos como si fueran lo mismo ya ha causado un fallo (ver seccion 4).
 | Parser de correlaciones | Funciona. 6 hojas, matrices simetricas de 11 a 28 fondos |
 | Correlacion conectada a Firestore | Si, documento `correlation_data`. Cae a `corrData.ts` si no esta |
 | Escala de color de la matriz | Rehecha en HSL: casi blanco en -1, naranja apagado en 0, rojo corporativo en +1, con leyenda |
+| Informe en PowerPoint | 16:9, tablas y graficos nativos (editables). `utils/pptExport.ts`, cargado solo al pulsar el boton |
+| Comparacion con benchmark en los informes | Opcional en PDF y PPT. Backtest y Drawdown salen una vez por perfil, cada uno con su indice |
+| Orden de perfiles en los informes | Siempre de mas conservador a mas agresivo, no en el orden en que se marcan |
+| Seleccionar todos los perfiles | Boton en el dialogo de exportar |
+| Copias automaticas antes de cada subida | `services/backups.ts`. Se guardan las 10 ultimas y se restauran desde el panel |
+| Contador de uso | `services/usage.ts`. Visitas y descargas por dia, sin cookies ni terceros |
+| Orden de secciones | Correlacion pasa a ir detras de Credito. Numeracion 00-10 renumerada |
 
 **Validaciones independientes que se pasaron** (no fiarse solo del mensaje verde):
 
@@ -106,6 +119,20 @@ las dos como si fueran lo mismo ya ha causado un fallo (ver seccion 4).
   Backtest las suyas.
 - Cambio de `xlsx`: los cinco parsers (rentabilidades, cambios, contribuidores,
   composicion/allocation y benchmarks) pasan sus scripts con la version 0.20.3.
+- PowerPoint: el archivo generado se abrio en el navegador y se leyo por dentro.
+  Con los seis perfiles salen 21 diapositivas, 2 graficos nativos y 25 tablas
+  nativas, 1,87 MB, y la firma del ZIP y el tipo MIME son los de un .pptx. Con un
+  perfil y benchmark, 16 diapositivas y 2 graficos, cada uno con su serie de
+  indice. Es decir: son objetos de PowerPoint de verdad, no imagenes.
+- Paginacion del PDF despues de partir Backtest y Drawdown por perfil: un perfil
+  sigue dando 4 hojas y los seis siguen dando 6, que son las cifras que ya
+  estaban en este documento. Con benchmark, un perfil da 5 y dos perfiles 7.
+- Alineacion del Backtest: las cuatro etiquetas y los cuatro campos del formulario
+  arrancan exactamente en el mismo pixel (medido en el navegador a 1440 px).
+- Historial de cambios: en la decision de febrero de 2026 —la que enseño el
+  equipo— la columna de entradas tiene dos fondos y ahora los dos ocupan dos
+  lineas. Comprobado ademas que la clase no se pone cuando la columna tiene un
+  solo fondo.
 - Style Box: las 72 celdas del archivo de Morningstar coinciden con las que
   habia escritas a mano (`node scripts/test-stylebox-parser.ts`). No basta con
   contar fechas: las dos columnas de cada perfil son intercambiables a ojo y
@@ -123,7 +150,18 @@ las dos como si fueran lo mismo ya ha causado un fallo (ver seccion 4).
 
 Por orden de valor:
 
-1. **Subir los archivos una vez** desde el panel. Ya no queda ninguna seccion
+1. **Publicar `firestore.rules`.** Es lo primero despues de este despliegue.
+   Las dos colecciones nuevas (`backups` y `usage_stats`) no existen sin sus
+   reglas, y mientras no esten:
+
+   - el panel **no deja subir nada**, porque la copia previa falla y la subida
+     se detiene a proposito (el mensaje de error lo dice y explica que hacer);
+   - el contador de uso falla en silencio y no cuenta ni visitas ni descargas.
+
+   Desde la consola de Firebase: *Firestore Database -> Reglas*, pegar el
+   contenido de `firestore.rules` y publicar.
+
+2. **Subir los archivos una vez** desde el panel. Ya no queda ninguna seccion
    leyendo datos escritos a mano —las siete subidas cubren la web entera— pero
    **una seccion no cambia hasta que su archivo se sube al menos una vez**:
    mientras no exista su documento, sigue pintando los datos empaquetados en el
@@ -138,7 +176,7 @@ Por orden de valor:
    El Perfilador es el unico que no necesita subida propia: sale de las mismas
    series que Drawdown, asi que se actualiza con el libro VL.
 
-2. **Bundle, lo que queda**: 2.939 kB, de los cuales 1,71 MB son
+3. **Bundle, lo que queda**: 2.939 kB, de los cuales 1,71 MB son
    `generatedData.ts`. Desde que Cambios, Credito, Contribuidores y Composicion
    leen de Firestore, ese archivo **ya solo sirve de respaldo** por si la base de
    datos no responde. Quitarlo bajaria el bundle a la mitad otra vez, pero deja
@@ -146,11 +184,11 @@ Por orden de valor:
    producto, no una limpieza. Lo mismo con `src/data/vlData.json` y
    `vlData.raw` (1,2 MB entre los dos), que ya no los importa nadie —esos si se
    pueden borrar sin consecuencias, no entran en el bundle, solo pesan en el repo.
-3. **Perfiles sin historico largo**: Conservador + y Agresivo + no tienen datos en
+4. **Perfiles sin historico largo**: Conservador + y Agresivo + no tienen datos en
    ventanas de 1/2/3/5 años ni en el historico anual. Aparecen sin barra, y en el
    grafico de retorno/riesgo sin punto de cartera (su benchmark si sale, porque las
    series VL de ambos si llegan). Es correcto, pero conviene que el equipo lo sepa.
-4. **Eje X del grafico de retorno/riesgo**: llega al 16% y ninguna serie pasa del
+5. **Eje X del grafico de retorno/riesgo**: llega al 16% y ninguna serie pasa del
    13,3%. Estaba dimensionado para las volatilidades inventadas, que subian a 14,8.
    Se puede apretar, es solo presentacion.
 
@@ -310,6 +348,55 @@ Por orden de valor:
   seccion y en el `rootMargin` del `IntersectionObserver` de `App.tsx`. Si crece la
   cabecera y no se mueven los otros dos, los enlaces del menu dejan el titulo
   tapado y la pestaña activa se enciende una seccion antes de tiempo.
+- **`pptxgenjs` trae dos avisos altos de npm que NO llegan al navegador.**
+  Depende de `image-size`, que tiene dos fallos de denegacion de servicio en sus
+  lectores de ICNS, JXL y HEIF, y no hay version parcheada. Ese modulo solo se
+  usa en Node: al construir, Vite lo sustituye por un modulo vacio
+  (`__vite-browser-external`), y en el paquete publicado no queda ni rastro de
+  esos lectores —comprobado buscandolos en `dist/`. Ademas la unica imagen que
+  se le pasa es el logo del propio repo. Es decir: `npm audit` dice 2 y el sitio
+  publicado sigue teniendo 0. No "arreglarlo" con `npm audit fix --force`: eso
+  instala pptxgenjs 1.1.5, de 2016, y se lleva por delante el informe entero.
+- **El PowerPoint se carga solo al pulsar el boton.** `pptxgenjs` son 380 kB
+  (130 kB comprimido) y solo hace falta cuando alguien exporta, asi que
+  `Header.tsx` lo trae con un `import()` dinamico. Si algun dia se convierte en
+  un import normal, esos 380 kB se los descarga tambien todo el que entra solo a
+  mirar la web.
+- **El backtest del PowerPoint y el de la pantalla son la misma funcion.**
+  `utils/backtestSim.ts` la comparten los dos, a proposito: es la misma clase de
+  fallo que las volatilidades del grafico de retorno/riesgo. Si el PPT llevara
+  su propia cuenta, el mismo informe daria un patrimonio final distinto segun el
+  formato y nadie lo notaria hasta que un cliente comparase los dos documentos.
+  El modo stress test se queda fuera de `backtestSim` porque solo existe en
+  pantalla y nunca sale en un informe.
+- **La consistencia de lineas del historial de cambios se mide, y por eso no
+  usa estado de React.** `MovesColumn` mira si alguna fila se ha partido en dos
+  lineas y, si es asi, parte todas. Para saberlo tiene que medir la maqueta
+  **natural**: quita la clase, mide y la vuelve a poner. Si eso se guardara en un
+  `useState`, el re-render volveria a medir sobre la maqueta ya partida —que
+  siempre parece partida— y la clase no se quitaria jamas aunque sobrara sitio.
+  Por eso se toca `classList` directamente, que en este caso no es una chapuza
+  sino la unica forma de que la medicion sea estable.
+- **Con benchmark, el informe saca un bloque por perfil.** Cada cartera tiene su
+  propio indice, asi que un solo grafico con seis carteras y seis indices no se
+  puede leer, y dibujar solo el indice del primer perfil —que es lo que hace la
+  seccion en pantalla, porque alli solo hay un perfil activo— pondria una curva
+  suelta al lado de cinco carteras con las que no tiene nada que ver. Vale tanto
+  para el PDF (`PrintReportLayout`) como para el PPT.
+- **La copia de seguridad guarda un documento por documento, no todos en uno.**
+  Una subida de niveles de credito toca treinta periodos, y treinta documentos
+  dentro de uno se pasan del limite de 1 MiB de Firestore. Por eso viven en
+  `backups/{id}/docs/{docId}`. Y se copia **solo lo que la subida va a tocar**:
+  copiar la coleccion entera arrastraria `vl_series` (560 KiB) en cada subida de
+  credito sin que cambie nada.
+- **Restaurar tambien tiene que poder borrar.** Si una subida estrena un
+  documento —como hizo `style_box_data`— deshacerla no es dejarlo con el
+  contenido malo, es quitarlo. Por eso cada documento copiado guarda si existia
+  antes, y no solo su contenido.
+- **El contador de uso no puede tumbar una descarga.** `trackEvent` no lanza
+  nunca: si no hay permisos o no hay red, la metrica se pierde y ya esta. Se
+  comprobo con las reglas todavia sin desplegar: la consola avisa y el
+  PowerPoint se genera igual.
 - **Las hojas del export de correlaciones no se pueden identificar por su
   nombre.** Las seis se llaman "Matriz de correlaciones entre f..." y es Excel
   quien deshace el empate numerandolas: "(1)", "(2)"... Ese numero dice en que
@@ -403,7 +490,12 @@ Por orden de valor:
 El mensaje verde de esta ultima dice con que cierre mensual se ha quedado. Si el
 archivo se exporto a mitad de mes, ese mes no cuenta: se usa el ultimo completo.
 
-Antes de una subida que reemplaza, conviene una copia:
+**Cada subida deja una copia automatica** de lo que habia justo antes, y en el
+panel hay una lista con las diez ultimas y un boton de restaurar. Restaurar
+devuelve solo los documentos que aquella subida toco; lo que se haya subido
+despues por otro lado se queda como esta.
+
+Para una copia en disco, fuera de Firebase:
 
 ```
 node scripts/backup-firestore.mjs
@@ -429,6 +521,7 @@ node scripts/test-stylebox-parser.ts "<Datos_Box>"  # style box vs el estatico
 node scripts/test-correlation-parser.ts "<Correlaciones>"  # forma y reparto por perfil
 node scripts/generate-vldata.mjs "<VL>"              # regenerar vlData.ts
 node scripts/print-pdf.mjs 2 informe.pdf             # el PDF sin tocar el navegador
+BENCHMARK=1 node scripts/print-pdf.mjs 0,4 x.pdf     # el PDF con el indice de cada perfil
 ```
 
 `audit-benchmarks.ts` sale con codigo distinto de cero si algo no cuadra, asi que
@@ -498,6 +591,21 @@ Piezas:
 **Orden de las secciones** (pedido por el usuario el 11 de agosto de 2026):
 1 Rendimiento, 2 Backtest, 3 Contribuidores, 4 Desglose de fondos, 5 Drawdown,
 6 Asset allocation.
+
+**Los perfiles salen siempre de mas conservador a mas agresivo**, no en el orden
+en que se marcan las casillas. Lo ordena el propio dialogo (`PdfExportModal`), asi
+que vale para el PDF, para el PowerPoint y para `scripts/print-pdf.mjs`.
+
+**Con la casilla de benchmark**, Backtest y Drawdown salen una vez por perfil en
+lugar de una vez en total, cada uno con su indice de referencia. Un perfil pasa
+de 4 hojas a 5; dos perfiles, a 7.
+
+**El PowerPoint es otro camino distinto** (`src/utils/pptExport.ts`): no
+reaprovecha la maqueta del PDF ni las secciones de pantalla, porque una hoja A4
+vertical no cabe en una diapositiva 16:9. Construye el deck con tablas y graficos
+nativos de PowerPoint —editables— a partir de los mismos datos del hook y de la
+misma `simulateBacktest`. Si se toca el contenido del informe hay que tocar los
+dos sitios: no comparten maqueta, solo datos.
 
 **Detalles que conviene no deshacer:**
 

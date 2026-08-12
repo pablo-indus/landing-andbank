@@ -2,10 +2,35 @@ import React, { useState } from 'react';
 import { FileText, ChevronLeft, ChevronRight, Moon, Sun, Settings } from 'lucide-react';
 import { AdminModal } from './AdminModal';
 import { useRef, useEffect } from 'react';
-import { PdfExportModal } from './PdfExportModal';
+import { PdfExportModal, type ExportOptions } from './PdfExportModal';
+import { useMonthlyReports } from '../hooks/useMonthlyReports';
+import { BENCHMARK_SERIES } from '../data/vlSeries';
+import { trackEvent } from '../services/usage';
 
 interface HeaderProps {
   activeSection: string;
+}
+
+/**
+ * El logo, en data: URI, para poder incrustarlo en el PowerPoint.
+ *
+ * pptxgenjs necesita los bytes de la imagen; una ruta del servidor le llega al
+ * archivo como un enlace roto en cuanto la presentacion sale del navegador.
+ */
+async function loadLogoDataUri(): Promise<string | null> {
+  try {
+    const res = await fetch('/logo.jpg');
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
 }
 
 /*
@@ -25,6 +50,12 @@ export const Header: React.FC<HeaderProps> = ({ activeSection }) => {
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [adminModalOpen, setAdminModalOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
+
+  // Los mismos datos que pinta la pantalla: el PowerPoint no vuelve a leer nada
+  // de la base, para que no pueda salir con un cierre distinto al de la web.
+  const { lastUpdated, windows, attributions, composition, assetAllocation, vlSeries } = useMonthlyReports();
+  const coverDate = (lastUpdated ?? new Date()).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+  const coverDateLabel = coverDate.charAt(0).toUpperCase() + coverDate.slice(1);
 
   // La clase `dark` ya la ha puesto el script de `index.html` antes del primer
   // pintado, asi que aqui solo hay que leerla. Decidirlo otra vez seria repetir
@@ -94,11 +125,11 @@ export const Header: React.FC<HeaderProps> = ({ activeSection }) => {
     { id: 'cambios', label: 'Historial Cambios' },
     { id: 'simulador', label: 'Backtest' },
     { id: 'drawdown', label: 'Drawdown' },
-    { id: 'correlacion', label: 'Correlación' },
     { id: 'contribuidores', label: 'Contribuidores' },
     { id: 'composicion', label: 'Composición' },
     { id: 'aa-global', label: 'Asset Allocation' },
     { id: 'credito', label: 'Crédito' },
+    { id: 'correlacion', label: 'Correlación' },
     { id: 'stylebox', label: 'Style Box' },
   ];
 
@@ -228,10 +259,40 @@ export const Header: React.FC<HeaderProps> = ({ activeSection }) => {
         </div>
       </div>
 
-      {pdfModalOpen && <PdfExportModal onClose={() => setPdfModalOpen(false)} onPrint={(profiles) => {
-        setPdfModalOpen(false);
-        window.dispatchEvent(new CustomEvent('generate-pdf', { detail: profiles }));
-      }} />}
+      {pdfModalOpen && (
+        <PdfExportModal
+          onClose={() => setPdfModalOpen(false)}
+          onPrint={(options) => {
+            setPdfModalOpen(false);
+            trackEvent('pdf');
+            window.dispatchEvent(new CustomEvent('generate-pdf', { detail: options }));
+          }}
+          onPowerPoint={async (options) => {
+            /*
+              pptxgenjs pesa bastante y solo hace falta cuando alguien pulsa el
+              boton, asi que se carga en ese momento: si fuera un import normal
+              se lo tragaria toda la gente que solo entra a mirar la web.
+            */
+            const [{ buildPresentation }, logo] = await Promise.all([
+              import('../utils/pptExport'),
+              loadLogoDataUri(),
+            ]);
+            trackEvent('pptx');
+            await buildPresentation({
+              ...options,
+              coverDateLabel,
+              windows,
+              attribution: attributions[0] ?? null,
+              composition: composition[0],
+              assetAllocation: assetAllocation[0],
+              vlSeries: vlSeries as any,
+              benchmarkNames: BENCHMARK_SERIES,
+              logo,
+            });
+            setPdfModalOpen(false);
+          }}
+        />
+      )}
       {adminModalOpen && <AdminModal onClose={() => setAdminModalOpen(false)} />}
     </header>
   );

@@ -56,7 +56,7 @@ export const SectionContribuidores: React.FC<{ forcedProfileIdx?: number; forced
       {!isPrintMode && (
       <div className="flex items-start gap-4 border-b-2 border-zinc-900 pb-3 mb-6">
         <span className="text-xs font-bold text-red-600 tracking-widest uppercase pt-1">
-          06
+          05
         </span>
         <div>
           <h2 className="text-xl font-extrabold text-zinc-900 dark:text-zinc-100 tracking-tight">
