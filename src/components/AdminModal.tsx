@@ -150,6 +150,19 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
     if (signedIn) void refreshBackups();
   }, [signedIn]);
 
+  /*
+    Segunda via de salida, ademas de la cruz. Mientras se sube no se cierra: el
+    proceso escribe decenas de documentos y cerrar el panel a medias no lo
+    detiene, solo deja de verse por donde va.
+  */
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !loading) onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [loading, onClose]);
+
   const handleRestore = async (id: string) => {
     setRestoring(id);
     setError('');
@@ -491,7 +504,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
       */
       let backup;
       try {
-        backup = await createBackup(await docsToBackup(reportType), selectedType.label);
+        backup = await createBackup(await docsToBackup(reportType), selectedType.label, file.name);
       } catch (err: any) {
         // Se para la subida a proposito. Lo mas probable es que falten las
         // reglas nuevas, y en ese caso el aviso tiene que decir que hacer: si
@@ -542,8 +555,15 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
 
   const modalContent = (
     <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-xl shadow-2xl overflow-hidden border border-zinc-200 dark:border-zinc-700 animate-in fade-in zoom-in-95 duration-200">
-        <div className="px-5 py-4 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+      {/*
+        El panel crece con el mensaje de resultado y con la lista de copias, y
+        sin tope llegaba a empujar su propia cabecera fuera de la pantalla: la
+        cruz de cerrar quedaba inalcanzable y no habia forma de salir. Ahora el
+        alto esta limitado, la cabecera se queda fija y lo que se desplaza es el
+        contenido.
+      */}
+      <div className="bg-white dark:bg-zinc-900 w-full max-w-md max-h-[90vh] flex flex-col rounded-xl shadow-2xl overflow-hidden border border-zinc-200 dark:border-zinc-700 animate-in fade-in zoom-in-95 duration-200">
+        <div className="shrink-0 px-5 py-4 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
           <h3 className="font-extrabold text-zinc-900 dark:text-white uppercase tracking-wider text-sm flex items-center gap-2">
             <Key size={16} className="text-zinc-500" /> Panel de Administracion
           </h3>
@@ -555,7 +575,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
           </button>
         </div>
 
-        <div className="p-5 space-y-6">
+        <div className="flex-1 overflow-y-auto p-5 space-y-6">
           {!signedIn ? (
             <>
               {!adminEmail && (
@@ -684,7 +704,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
                     Todavia no hay copias. Se crea una automaticamente antes de cada subida.
                   </p>
                 ) : (
-                  <ul className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                  <ul className="space-y-1.5">
                     {backups.map((b) => (
                       <li
                         key={b.id}
@@ -692,6 +712,18 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
                       >
                         <div className="min-w-0">
                           <p className="font-bold text-zinc-800 dark:text-zinc-200 truncate">{b.label}</p>
+                          {/*
+                            El archivo es lo unico que distingue dos subidas del
+                            mismo tipo: sin el, "Niveles de credito · 82 doc."
+                            aparece repetido y hay que adivinar por la hora cual
+                            traia los datos buenos.
+                          */}
+                          <p
+                            className="text-[10px] text-zinc-600 dark:text-zinc-400 truncate"
+                            title={b.fileName ?? undefined}
+                          >
+                            {b.fileName ?? 'Archivo sin registrar (copia anterior)'}
+                          </p>
                           <p className="text-[10px] text-zinc-500">
                             {new Date(b.createdAt).toLocaleString('es-ES', {
                               day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',

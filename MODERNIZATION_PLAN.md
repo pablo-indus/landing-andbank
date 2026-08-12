@@ -4,15 +4,21 @@ Documento de traspaso. Si empiezas una conversacion nueva, lee SOLO este archivo
 contiene el estado actual, lo que falta y las trampas ya descubiertas.
 Ultima actualizacion: 12 agosto 2026 (informe en PowerPoint, comparacion con
 benchmark en los informes, copias automaticas antes de cada subida, contador de
-uso y la tanda de arreglos de formato que reviso el equipo). El 11 de agosto,
+uso y la tanda de arreglos de formato que reviso el equipo; ese mismo dia, ya en
+produccion: reglas publicadas, primera subida con copia, el panel deja de crecer
+sin tope y cada copia guarda el nombre del Excel). El 11 de agosto,
 antes: Perfilador, Style Box y Correlacion conectados a Firestore, escala de
 color nueva en la matriz, estilo corporativo e informe PDF rehecho. **Ya no
 queda ninguna seccion leyendo datos escritos a mano.**
 
-> **Antes de nada, si acabas de desplegar:** hay que publicar `firestore.rules`.
-> Las colecciones `backups` y `usage_stats` son nuevas y sin reglas no existen.
-> Sin ellas **el panel no deja subir nada**, porque la copia de seguridad previa
-> falla y la subida se para a proposito.
+> **Si tocas `firestore.rules`, hay que publicarlas a mano** en la consola de
+> Firebase; el push a GitHub no las despliega. Las colecciones `backups` y
+> `usage_stats` no existen sin sus reglas, y sin ellas **el panel no deja subir
+> nada**: la copia de seguridad previa falla y la subida se para a proposito.
+> Publicar **no es instantaneo** —tarda hasta un minuto largo en propagarse—,
+> asi que si el error de permisos sigue justo despues de darle a *Publicar*,
+> esperar y reintentar antes de tocar nada. Ya paso el 12 de agosto: se dieron
+> por rotas las reglas cuando solo estaban propagandose.
 
 ---
 
@@ -91,7 +97,7 @@ las dos como si fueran lo mismo ya ha causado un fallo (ver seccion 4).
 | Comparacion con benchmark en los informes | Opcional en PDF y PPT. Backtest y Drawdown salen una vez por perfil, cada uno con su indice |
 | Orden de perfiles en los informes | Siempre de mas conservador a mas agresivo, no en el orden en que se marcan |
 | Seleccionar todos los perfiles | Boton en el dialogo de exportar |
-| Copias automaticas antes de cada subida | `services/backups.ts`. Se guardan las 10 ultimas y se restauran desde el panel |
+| Copias automaticas antes de cada subida | `services/backups.ts`. Se guardan las 10 ultimas y se restauran desde el panel. Cada una anota el **nombre del Excel** que se subio despues |
 | Contador de uso | `services/usage.ts`. Visitas y descargas por dia, sin cookies ni terceros |
 | Orden de secciones | Correlacion pasa a ir detras de Credito. Numeracion 00-10 renumerada |
 
@@ -150,16 +156,14 @@ las dos como si fueran lo mismo ya ha causado un fallo (ver seccion 4).
 
 Por orden de valor:
 
-1. **Publicar `firestore.rules`.** Es lo primero despues de este despliegue.
-   Las dos colecciones nuevas (`backups` y `usage_stats`) no existen sin sus
-   reglas, y mientras no esten:
-
-   - el panel **no deja subir nada**, porque la copia previa falla y la subida
-     se detiene a proposito (el mensaje de error lo dice y explica que hacer);
-   - el contador de uso falla en silencio y no cuenta ni visitas ni descargas.
-
-   Desde la consola de Firebase: *Firestore Database -> Reglas*, pegar el
-   contenido de `firestore.rules` y publicar.
+1. ~~**Publicar `firestore.rules`.**~~ **Hecho el 12 de agosto de 2026.** Las
+   dos colecciones nuevas (`backups` y `usage_stats`) ya tienen reglas
+   publicadas, y la primera subida de niveles de credito con copia de seguridad
+   funciono (30 periodos, copia de 82 documentos). Queda escrito porque vuelve a
+   hacer falta cada vez que se toque `firestore.rules`: desde la consola de
+   Firebase, *Firestore Database -> Reglas*, pegar el contenido del archivo,
+   publicar y **esperar a que propague** (hasta un minuto largo; el error de
+   permisos sigue saliendo mientras tanto).
 
 2. **Subir los archivos una vez** desde el panel. Ya no queda ninguna seccion
    leyendo datos escritos a mano —las siete subidas cubren la web entera— pero
@@ -393,6 +397,31 @@ Por orden de valor:
   documento —como hizo `style_box_data`— deshacerla no es dejarlo con el
   contenido malo, es quitarlo. Por eso cada documento copiado guarda si existia
   antes, y no solo su contenido.
+- **Una copia sin el nombre del archivo no sirve para elegir.** Dos subidas de
+  niveles de credito salen identicas en la lista —mismo titulo, mismos 82
+  documentos— y la hora no dice cual traia los datos buenos. `BackupSummary`
+  lleva `fileName` desde el 12 de agosto; las copias anteriores no lo tienen y
+  se muestran como "Archivo sin registrar". Ojo al guardarlo: Firestore rechaza
+  los campos con valor `undefined`, asi que el campo se anade solo si lo hay.
+- **Un error de subida no se puede clasificar por el texto de Firebase.** El
+  aviso de "no se pudo crear la copia" incrusta el error original, que dice
+  *"Missing or insufficient permissions"*; el filtro generico del panel buscaba
+  la palabra `permission` y lo reescribia como "vuelve a iniciar sesion",
+  mandando a rehacer login cuando lo que faltaba era publicar las reglas. El
+  mensaje de la copia se reconoce por su principio y se deja pasar tal cual.
+- **El panel de administracion tiene que estar limitado en alto.** Crece con el
+  mensaje de resultado y con la lista de copias, y sin tope llego a empujar su
+  propia cabecera fuera de la pantalla: la cruz quedaba inalcanzable y no habia
+  forma de cerrarlo. La tarjeta es `max-h-[90vh] flex flex-col`, la cabecera
+  `shrink-0` y el cuerpo `flex-1 overflow-y-auto`. La lista de copias **no**
+  lleva su propio scroll: dos areas de scroll anidadas se pelean con la rueda.
+  Ademas cierra con Escape, salvo mientras sube (cerrar no detiene la escritura,
+  solo la oculta).
+- **Un Excel de 0 KB entra sin quejarse hasta el parser.** Paso en produccion:
+  dos meses con el mismo nombre de archivo, Python tenia abierto el de junio y
+  al guardar el de julio quedo vacio. Se subio y el error no menciono el tamaño.
+  Si un parser se queja de que no encuentra hojas, mirar el tamaño del archivo
+  antes que el codigo.
 - **El contador de uso no puede tumbar una descarga.** `trackEvent` no lanza
   nunca: si no hay permisos o no hay red, la metrica se pierde y ya esta. Se
   comprobo con las reglas todavia sin desplegar: la consola avisa y el

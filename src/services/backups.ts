@@ -34,6 +34,15 @@ export interface BackupSummary {
   createdAt: string;
   /** Que subida la genero, en palabras ("Niveles de credito"). */
   label: string;
+  /**
+   * Nombre del Excel que se subio a continuacion.
+   *
+   * Sin esto, dos subidas del mismo tipo salen identicas en la lista —mismo
+   * titulo, mismo numero de documentos— y solo se distinguen por la hora, que
+   * no dice nada sobre que datos traia cada una. Las copias anteriores a este
+   * cambio no lo llevan, asi que puede faltar.
+   */
+  fileName?: string;
   /** Identificadores de los documentos guardados. */
   docIds: string[];
 }
@@ -51,7 +60,11 @@ const newBackupId = () => new Date().toISOString().replace(/[-:.]/g, '').replace
  *
  * Devuelve null si no se pudo copiar nada; quien llama decide si sigue.
  */
-export async function createBackup(docIds: string[], label: string): Promise<BackupSummary | null> {
+export async function createBackup(
+  docIds: string[],
+  label: string,
+  fileName?: string
+): Promise<BackupSummary | null> {
   if (docIds.length === 0) return null;
 
   const id = newBackupId();
@@ -70,6 +83,8 @@ export async function createBackup(docIds: string[], label: string): Promise<Bac
     id,
     createdAt: new Date().toISOString(),
     label,
+    // Solo si lo hay: Firestore rechaza los campos con valor `undefined`.
+    ...(fileName ? { fileName } : {}),
     docIds: saved,
   };
   await setDoc(doc(db, 'backups', id), summary);
@@ -117,9 +132,10 @@ export async function restoreBackup(id: string): Promise<string> {
     }
   }
 
-  const label = (meta.data() as BackupSummary).label;
+  const { label, fileName } = meta.data() as BackupSummary;
+  const which = fileName ? `${label} (antes de subir ${fileName})` : label;
   return (
-    `Restaurada la copia de ${label}: ${restored} documento(s) devuelto(s) a su estado anterior` +
+    `Restaurada la copia de ${which}: ${restored} documento(s) devuelto(s) a su estado anterior` +
     (removed > 0 ? ` y ${removed} eliminado(s), que no existian entonces.` : '.')
   );
 }
