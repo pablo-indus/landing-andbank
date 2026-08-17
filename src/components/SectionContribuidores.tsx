@@ -22,9 +22,9 @@ export const SectionContribuidores: React.FC<{ forcedProfileIdx?: number; forced
       ? [{ month: `ytd_${ytdSource.month}`, label: `Acumulado ${ytdSource.label.split(' ').pop()}`, data: ytdSource.ytd }]
       : [];
 
-    // El mes mas reciente va primero (es lo que se consulta a diario) y el
-    // acumulado justo detras, como estaban ordenados antes.
-    return [attributions[0], ...ytdTab, ...attributions.slice(1)];
+    // El acumulado va primero -tambien como pestaña por defecto- y detras los
+    // meses, del mas reciente al mas antiguo.
+    return [...ytdTab, ...attributions];
   }, [attributions]);
 
   const [profileIdx, setProfileIdx] = useState<number>(forcedProfileIdx);
