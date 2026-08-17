@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MONTHLY_ATTRIBUTIONS, PROFILES } from '../data/portfolioData';
 import { useMonthlyReports } from '../hooks/useMonthlyReports';
+import { findYtdSource } from '../utils/attributionYtd';
 
 export const SectionContribuidores: React.FC<{ forcedProfileIdx?: number; forcedActiveIndices?: number[]; isPrintMode?: boolean }> = ({ forcedProfileIdx = 2, forcedActiveIndices, isPrintMode }) => {
   const { attributions } = useMonthlyReports();
@@ -15,11 +16,9 @@ export const SectionContribuidores: React.FC<{ forcedProfileIdx?: number; forced
     // Se expone como una pestaña mas, con los valores del mes mas reciente que
     // lo traiga: si el ultimo Excel subido no incluyera el bloque YTD, no tiene
     // sentido dejar la pestaña en blanco en vez de mostrar el ultimo disponible.
-    const ytdSource = attributions.find(
-      (a: any) => a?.ytd && a.ytd.some((p: any) => p.contrib.length > 0 || p.detract.length > 0)
-    );
+    const ytdSource = findYtdSource(attributions);
     const ytdTab = ytdSource
-      ? [{ month: `ytd_${ytdSource.month}`, label: `Acumulado ${ytdSource.label.split(' ').pop()}`, data: ytdSource.ytd }]
+      ? [{ month: `ytd`, label: `Acumulado ${ytdSource.label.split(' ').pop()}`, data: ytdSource.profiles }]
       : [];
 
     // El acumulado va primero -tambien como pestaña por defecto- y detras los

@@ -28,6 +28,7 @@ await buildPresentation({
   coverDateLabel: 'Julio 2026',
   windows: WINDOWS_DATA as any,
   attribution: (MONTHLY_ATTRIBUTIONS as any)?.[0] ?? null,
+  attributions: MONTHLY_ATTRIBUTIONS as any,
   composition: COMPOSITION_SNAPSHOTS[0] as any,
   assetAllocation: ASSET_ALLOCATION_SNAPSHOTS[0] as any,
   vlSeries: HISTORICAL_VL as any,

@@ -5,6 +5,7 @@ import { maxDrawdown, windowStats } from './seriesStats';
 import { allocationColorHex } from './allocationColors';
 import { breakdownParent } from './allocationRows';
 import { globalSettings } from '../store';
+import { findYtdSource } from './attributionYtd';
 import type { AssetAllocationSnapshot, CompositionSnapshot, MonthlyAttribution } from '../types';
 
 /**
@@ -59,6 +60,10 @@ export interface PptData {
   coverDateLabel: string;
   windows: { cats: string[]; values: (number | null)[][] };
   attribution: MonthlyAttribution | null;
+  /** Todos los meses cargados, del mas reciente al mas antiguo: hace falta la
+   *  lista entera (no solo `attribution`) para encontrar el ultimo mes que
+   *  traiga el bloque YTD, que no siempre es el mas reciente. */
+  attributions: any[];
   composition: CompositionSnapshot | undefined;
   assetAllocation: AssetAllocationSnapshot | undefined;
   vlSeries: Record<string, { d: string; v: number }[]>;
@@ -347,9 +352,12 @@ function mainAllocationRows(snapshot: AssetAllocationSnapshot): any[] {
 
 export async function buildPresentation(data: PptData): Promise<void> {
   const {
-    profiles, withBenchmark, coverDateLabel, windows, attribution,
+    profiles, withBenchmark, coverDateLabel, windows, attribution, attributions,
     composition, assetAllocation, vlSeries, benchmarkNames, logo,
   } = data;
+  // Mismo criterio que la pestaña "Acumulado" de la pantalla: el YTD no
+  // siempre lo trae el mes mas reciente, asi que se busca en toda la lista.
+  const ytdSource = findYtdSource(attributions);
 
   const pptx = new PptxGenJS();
   pptx.layout = 'LAYOUT_16x9';
@@ -601,10 +609,15 @@ export async function buildPresentation(data: PptData): Promise<void> {
     if (withData.length > 0) {
       withData.forEach((p) => {
         const block = attribution.data[p];
-        const ytdBlock = attribution.ytd?.[p];
+        const ytdBlock = ytdSource?.profiles[p];
         const slide = contentSlide(deck, 3, `Análisis de Contribuidores · ${PROFILES[p]}`, attribution.label);
 
-        const table = (items: typeof block.contrib, title: string, fill: string) => {
+        // "Mes" / "YTD" va en el propio titulo de la tabla, no en una etiqueta
+        // aparte: son cuatro tablas en la misma diapositiva y hay que poder
+        // distinguirlas sin subir la vista al rotulo de la fila.
+        const table = (items: typeof block.contrib, kind: 'Mes' | 'YTD', isContrib: boolean) => {
+          const fill = isContrib ? '15803D' : 'B91C1C';
+          const title = `${isContrib ? 'Contribuidores' : 'Detractores'} ${kind}`;
           const head = [{ text: title, options: { bold: true, color: 'FFFFFF', fill: { color: fill }, colspan: 3, align: 'center' } }];
           const sub = ['Fondo', 'Rent.', 'Contrib.'].map((t, i) => ({
             text: t,
@@ -637,20 +650,20 @@ export async function buildPresentation(data: PptData): Promise<void> {
             fontSize: 8, bold: true, color: MUTED, charSpacing: 0.6, fontFace: FONT,
           });
 
-        caption(`MES · ${attribution.label}`, BODY_TOP);
+        caption(attribution.label, BODY_TOP);
         const monthY = BODY_TOP + 0.2;
-        slide.addTable(table(block.contrib, 'Mayores contribuidores', '15803D') as any,
+        slide.addTable(table(block.contrib, 'Mes', true) as any,
           tableOpts({ x: M.x, y: monthY, w: 4.4, colW: [2.4, 1, 1], fontSize: 8.5, rowH }));
-        slide.addTable(table(block.detract, 'Mayores detractores', 'B91C1C') as any,
+        slide.addTable(table(block.detract, 'Mes', false) as any,
           tableOpts({ x: M.x + 4.7, y: monthY, w: 4.4, colW: [2.4, 1, 1], fontSize: 8.5, rowH }));
 
         if (ytdBlock && (ytdBlock.contrib.length > 0 || ytdBlock.detract.length > 0)) {
           const ytdCapY = monthY + blockRows * rowH + 0.14;
-          caption(`ACUMULADO ${attribution.label.split(' ').pop()}`, ytdCapY);
+          caption(`Acumulado ${ytdSource!.label.split(' ').pop()}`, ytdCapY);
           const ytdY = ytdCapY + 0.2;
-          slide.addTable(table(ytdBlock.contrib, 'Mayores contribuidores', '15803D') as any,
+          slide.addTable(table(ytdBlock.contrib, 'YTD', true) as any,
             tableOpts({ x: M.x, y: ytdY, w: 4.4, colW: [2.4, 1, 1], fontSize: 8.5, rowH }));
-          slide.addTable(table(ytdBlock.detract, 'Mayores detractores', 'B91C1C') as any,
+          slide.addTable(table(ytdBlock.detract, 'YTD', false) as any,
             tableOpts({ x: M.x + 4.7, y: ytdY, w: 4.4, colW: [2.4, 1, 1], fontSize: 8.5, rowH }));
         }
       });

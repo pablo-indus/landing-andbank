@@ -7,12 +7,18 @@ bloque YTD cuando el Excel trae una pestana por mes, solo en el formato de una
 sola hoja; por eso la pestana "Acumulado" desaparecio de la web al subir julio.
 Corregido, y de paso: el informe en PowerPoint ya no lleva portadilla por seccion
 —alargaban el documento sin decir nada que el titulo numerado no dijera ya—, la
-diapositiva de contribuidores saca tambien el bloque YTD debajo del mes, y la
-cabecera de cada hoja dice "ANDBANK · PORTFOLIO FUNDS"). **Falta volver a subir
+cabecera de cada hoja dice "ANDBANK · PORTFOLIO FUNDS", y la pestaña "Acumulado"
+de la pantalla pasa a ser la primera —y la que se ve por defecto—, con los meses
+detras en orden descendente. La diapositiva de contribuidores del PowerPoint
+tambien saca el bloque YTD debajo del mes, con las tablas tituladas
+"Contribuidores/Detractores Mes" y "Contribuidores/Detractores YTD": la primera
+version de ese bloque no lo enseñaba nunca porque buscaba el YTD solo en el mes
+activo del informe en vez de en toda la lista, la misma busqueda que ya usaba la
+pantalla (ahora compartida en `utils/attributionYtd.ts`). **Falta volver a subir
 el Excel de julio** para que su copia en Firestore tenga el bloque YTD: la que
-hay ahora se subio con el parser viejo y no lo guardo, asi que la pestana
-"Acumulado" de la web esta enseñando el acumulado hasta junio, no hasta julio,
-hasta que se repita esa subida. Antes de esto, misma fecha: las cajas resumen de
+hay ahora se subio con el parser viejo y no lo guardo, asi que tanto la web como
+el PowerPoint estan enseñando el acumulado hasta junio, no hasta julio, hasta
+que se repita esa subida. Antes de esto, misma fecha: las cajas resumen de
 perfil ya no dicen "YTD 2026" / "Junio" a fuego, sino la cabecera real de columna
 del Excel de rentabilidades. Y antes: escenarios de crisis reales en el stress
 test y caida de 2008 estimada por perfil, benchmark en el grafico de barras,
@@ -130,7 +136,8 @@ las dos como si fueran lo mismo ya ha causado un fallo (ver seccion 4).
 | Etiquetas "YTD" y del mes en las cajas resumen de perfil | Ya no van fijas ("YTD 2026", "Junio"): `adaptKpis` (`useMonthlyReports.ts`) devuelve tambien el nombre real de esas dos columnas del Excel, y `KpiStrip.tsx` las pinta tal cual |
 | Bloque YTD de contribuidores en el formato "una pestana por mes" | `contributorsProcessor.ts` tambien lo lee ahi, no solo en el de una sola hoja. La pestaña "Acumulado" de la web ya no depende de que mes se subiera con el formato antiguo |
 | Portadillas por seccion del PowerPoint | Quitadas: el titulo numerado de cada diapositiva ya dice la seccion. Un perfil pasa de 18 a 12 diapositivas, los seis de 23 a 17, y los seis con benchmark de 34 a 28 |
-| Bloque YTD en la diapositiva de contribuidores del PowerPoint | Sale debajo del bloque del mes, en la misma diapositiva, con los mismos datos que la pestaña "Acumulado" de la pantalla |
+| Bloque YTD en la diapositiva de contribuidores del PowerPoint | Sale debajo del bloque del mes, en la misma diapositiva, con las cuatro tablas tituladas "Contribuidores/Detractores Mes" y "Contribuidores/Detractores YTD". La primera version buscaba el YTD solo en el mes activo del informe y por eso no salia nunca; ahora usa `findYtdSource`, la misma busqueda que la pantalla |
+| Pestaña "Acumulado" primero en Contribuidores | Antes iba detras del mes mas reciente; ahora es la primera pestaña y la que se ve por defecto, y los meses van detras en orden descendente |
 | Cabecera del PowerPoint | Dice "ANDBANK · PORTFOLIO FUNDS" en vez de "ANDBANK · CARTERAS MODELO" |
 
 **Validaciones independientes que se pasaron** (no fiarse solo del mensaje verde):
@@ -619,7 +626,13 @@ Por orden de valor:
   viejo y usa el primero que traiga `ytd` con datos. Sirve de red mientras se
   repite la subida de julio, pero no sustituye a subir el archivo bueno: lo que
   enseña mientras tanto es el acumulado hasta el ultimo mes que lo trajo, no
-  hasta el mas reciente.
+  hasta el mas reciente. Esa busqueda vive en `utils/attributionYtd.ts`
+  (`findYtdSource`) precisamente para no tener que repetirla: la primera version
+  del PowerPoint la reimplemento mal —miraba solo `attribution` (el mes activo
+  del informe) en vez de la lista completa— y por eso el bloque YTD nunca
+  llegaba a salir en el informe real aunque la pantalla si lo enseñara. Cualquier
+  sitio nuevo que necesite el acumulado del año tiene que llamar a esa funcion,
+  no reescribir el `.find`.
 - **`vlData.ts` y `generatedData.ts` son necesarios**, aunque parezcan huerfanos:
   `portfolioData.ts` los importa. `vlData.ts` son 1,2 MB en una sola linea, por eso
   `wc -l` dice 0. **No abrirlos enteros** (gasta muchisimo contexto).
@@ -824,9 +837,17 @@ Desde el 17 de agosto se parece bastante mas al PDF:
   añade la serie del indice, igual que en pantalla.
 - **Backtest**: tarjetas de KPI con una o dos curvas y tabla a partir de tres,
   que es el mismo corte que hace el PDF.
-- **Contribuidores** saca el bloque YTD debajo del mes, en la misma diapositiva
-  (antes solo salia el mes): mismos datos que la pestaña "Acumulado" de la
-  pantalla, tomados de `attribution.ytd`.
+- **Contribuidores** saca cuatro tablas por perfil en la misma diapositiva:
+  "Contribuidores Mes" / "Detractores Mes" arriba y "Contribuidores YTD" /
+  "Detractores YTD" debajo (antes solo salia el mes, y las cuatro se llamaban
+  "Mayores contribuidores/detractores" sin distinguir periodo). El bloque YTD
+  sale de `findYtdSource` (`utils/attributionYtd.ts`), la misma busqueda que
+  usa la pestaña "Acumulado" de la pantalla: recorre los meses del mas reciente
+  al mas antiguo y coge el primero que traiga el bloque. Hace falta esa busqueda
+  —y no basta con el mes activo del informe— porque no todos los meses traen
+  YTD (ver seccion 4). La primera version de este PowerPoint solo miraba el mes
+  mas reciente y por eso el YTD no salia nunca en el informe real, aunque si
+  salia en la pantalla gracias a esa misma busqueda.
 - **Desglose de fondos** con **columna de ISIN**, y varias categorias por
   diapositiva en lugar de una por categoria.
 - **Drawdown** añade una tabla con la caida maxima de cada serie y desde que año

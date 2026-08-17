@@ -283,6 +283,7 @@ export const Header: React.FC<HeaderProps> = ({ activeSection }) => {
               coverDateLabel,
               windows,
               attribution: attributions[0] ?? null,
+              attributions,
               composition: composition[0],
               assetAllocation: assetAllocation[0],
               vlSeries: vlSeries as any,
