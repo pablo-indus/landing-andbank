@@ -1,8 +1,11 @@
 import React from 'react';
 import { useMonthlyReports } from '../hooks/useMonthlyReports';
 
+const formatPct = (value: number) =>
+  `${value >= 0 ? '+' : ''}${value.toFixed(1).replace('.', ',')}%`;
+
 export const KpiStrip: React.FC = () => {
-  const { profileKpis } = useMonthlyReports();
+  const { profileKpis, kpiLabels } = useMonthlyReports();
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-6 relative z-20">
@@ -28,15 +31,15 @@ export const KpiStrip: React.FC = () => {
 
             <div className="space-y-1 mt-2">
               <div className="flex justify-between items-baseline text-xs">
-                <span className="text-zinc-500 dark:text-zinc-400 text-[10px] uppercase font-medium">YTD 2026</span>
+                <span className="text-zinc-500 dark:text-zinc-400 text-[10px] uppercase font-medium">YTD {kpiLabels.year}</span>
                 <span className="font-bold text-zinc-900 dark:text-zinc-100 tabular-nums text-sm">
-                  +{kpi.p2026YTD.toFixed(1).replace('.', ',')}%
+                  {formatPct(kpi.p2026YTD)}
                 </span>
               </div>
               <div className="flex justify-between items-baseline text-xs pt-1 border-t border-zinc-100">
-                <span className="text-zinc-500 dark:text-zinc-400 text-[10px] uppercase font-medium">Junio</span>
+                <span className="text-zinc-500 dark:text-zinc-400 text-[10px] uppercase font-medium">{kpiLabels.month}</span>
                 <span className="font-bold text-zinc-700 dark:text-zinc-300 tabular-nums text-xs">
-                  +{kpi.pJune.toFixed(1).replace('.', ',')}%
+                  {formatPct(kpi.pJune)}
                 </span>
               </div>
             </div>

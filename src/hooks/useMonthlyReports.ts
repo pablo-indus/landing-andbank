@@ -85,8 +85,16 @@ const extractDateFromLabel = (label: string) => {
  * cada cierre ("Junio", luego "Julio"...) y darla por fija obligaria a tocar el
  * codigo todos los meses.
  */
-function adaptKpis(kpis: any): typeof PROFILE_KPIS {
-  if (!kpis?.columns || !kpis?.rows) return PROFILE_KPIS;
+/** Etiquetas de periodo que acompanan a los KPIs: se leen del propio Excel, no se fijan. */
+const FALLBACK_KPI_LABELS = { year: '2026', month: 'Junio' };
+
+function adaptKpis(kpis: any): {
+  values: typeof PROFILE_KPIS;
+  labels: typeof FALLBACK_KPI_LABELS;
+} {
+  if (!kpis?.columns || !kpis?.rows) {
+    return { values: PROFILE_KPIS, labels: FALLBACK_KPI_LABELS };
+  }
 
   const cols: string[] = kpis.columns;
   const col2025 = cols.find((c) => c.trim() === '2025');
@@ -95,7 +103,12 @@ function adaptKpis(kpis: any): typeof PROFILE_KPIS {
   // La columna del mes es la unica cuyo titulo es una palabra sin cifras.
   const colMonth = cols.find((c) => /^[a-záéíóúñ]+$/i.test(c.trim()) && !/volat/i.test(c));
 
-  return PROFILES.map((name, i) => {
+  const labels = {
+    year: col2026 ? col2026.trim() : FALLBACK_KPI_LABELS.year,
+    month: colMonth ? colMonth.trim() : FALLBACK_KPI_LABELS.month,
+  };
+
+  const values = PROFILES.map((name, i) => {
     const row = kpis.rows[name];
     const fallback = PROFILE_KPIS[i];
     if (!row) return fallback;
@@ -112,6 +125,8 @@ function adaptKpis(kpis: any): typeof PROFILE_KPIS {
       volatility: pick(colVol, fallback.volatility),
     };
   });
+
+  return { values, labels };
 }
 
 /**
@@ -275,6 +290,8 @@ export interface MonthlyReportsState {
   returns: any | null;
   /** KPIs por perfil, ya en el formato de los componentes. Cae a los estaticos. */
   profileKpis: typeof PROFILE_KPIS;
+  /** Etiquetas de ano y mes de los KPIs, leidas de las cabeceras del Excel. */
+  kpiLabels: { year: string; month: string };
   /** Ventanas de rentabilidad anualizada. Cae a las estaticas. */
   windows: typeof WINDOWS_DATA;
   /** Historico de composicion por fecha de rebalanceo. Cae a los estaticos. */
@@ -302,6 +319,7 @@ export function useMonthlyReports(): MonthlyReportsState {
     performance: null,
     returns: null,
     profileKpis: PROFILE_KPIS,
+    kpiLabels: FALLBACK_KPI_LABELS,
     windows: WINDOWS_DATA,
     composition: COMPOSITION_SNAPSHOTS,
     assetAllocation: ASSET_ALLOCATION_SNAPSHOTS,
@@ -405,6 +423,8 @@ export function useMonthlyReports(): MonthlyReportsState {
           .filter((block: any) => Array.isArray(block?.data) && block.data.length > 0)
           .sort((a: any, b: any) => periodToSortKey(b.month) - periodToSortKey(a.month));
 
+        const { values: profileKpis, labels: kpiLabels } = adaptKpis(returns?.kpis);
+
         setState({
           reports,
           historicalChanges,
@@ -412,7 +432,8 @@ export function useMonthlyReports(): MonthlyReportsState {
           attributions,
           performance,
           returns,
-          profileKpis: adaptKpis(returns?.kpis),
+          profileKpis,
+          kpiLabels,
           windows: adaptWindows(returns?.windows),
           ...adaptAllocation(allocation),
           vlSeries: adaptVlSeries(vlSeriesDoc),

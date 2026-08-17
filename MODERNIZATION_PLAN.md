@@ -2,11 +2,14 @@
 
 Documento de traspaso. Si empiezas una conversacion nueva, lee SOLO este archivo:
 contiene el estado actual, lo que falta y las trampas ya descubiertas.
-Ultima actualizacion: 17 agosto 2026 (tanda pedida por el equipo: escenarios de
-crisis reales en el stress test y caida de 2008 estimada por perfil, benchmark en
-el grafico de barras, nueve eventos macro en el drawdown, tabla de composicion y
-de asset allocation mas legibles, descargo de la matriz de correlacion,
-confirmacion al restaurar una copia y PowerPoint rehecho para parecerse al PDF).
+Ultima actualizacion: 17 agosto 2026 (las cajas resumen de perfil ya no dicen
+"YTD 2026" / "Junio" a fuego: las etiquetas de ano y mes salen de la cabecera de
+columna del Excel de rentabilidades, igual que las cifras). Antes de eso, misma
+fecha: escenarios de crisis reales en el stress test y caida de 2008 estimada por
+perfil, benchmark en el grafico de barras, nueve eventos macro en el drawdown,
+tabla de composicion y de asset allocation mas legibles, descargo de la matriz de
+correlacion, confirmacion al restaurar una copia y PowerPoint rehecho para
+parecerse al PDF.
 El 12 de agosto: informe en PowerPoint, comparacion con benchmark en los
 informes, copias automaticas antes de cada subida, contador de uso y la tanda de
 arreglos de formato que reviso el equipo; ese mismo dia, ya en produccion:
@@ -115,6 +118,7 @@ las dos como si fueran lo mismo ya ha causado un fallo (ver seccion 4).
 | Descargo de la matriz de correlacion | Plegado, como el de la composicion de benchmarks |
 | Confirmacion al restaurar | Dialogo propio que explica que hace, con el boton de confirmar en rojo |
 | Informe en PowerPoint | Rehecho: portadillas de seccion, cabecera y pie con "x / total", grafico de barras de ventanas, tarjetas KPI, columna ISIN, donuts nativos, tabla de indices y descargo legal |
+| Etiquetas "YTD" y del mes en las cajas resumen de perfil | Ya no van fijas ("YTD 2026", "Junio"): `adaptKpis` (`useMonthlyReports.ts`) devuelve tambien el nombre real de esas dos columnas del Excel, y `KpiStrip.tsx` las pinta tal cual |
 
 **Validaciones independientes que se pasaron** (no fiarse solo del mensaje verde):
 
