@@ -2,23 +2,31 @@
 
 Documento de traspaso. Si empiezas una conversacion nueva, lee SOLO este archivo:
 contiene el estado actual, lo que falta y las trampas ya descubiertas.
-Ultima actualizacion: 17 agosto 2026 (el parser de contribuidores no guardaba el
-bloque YTD cuando el Excel trae una pestana por mes, solo en el formato de una
-sola hoja; por eso la pestana "Acumulado" desaparecio de la web al subir julio.
-Corregido, y de paso: el informe en PowerPoint ya no lleva portadilla por seccion
-—alargaban el documento sin decir nada que el titulo numerado no dijera ya—, la
-cabecera de cada hoja dice "ANDBANK · PORTFOLIO FUNDS", y la pestaña "Acumulado"
-de la pantalla pasa a ser la primera —y la que se ve por defecto—, con los meses
-detras en orden descendente. La diapositiva de contribuidores del PowerPoint
-tambien saca el bloque YTD debajo del mes, con las tablas tituladas
-"Contribuidores/Detractores Mes" y "Contribuidores/Detractores YTD": la primera
-version de ese bloque no lo enseñaba nunca porque buscaba el YTD solo en el mes
-activo del informe en vez de en toda la lista, la misma busqueda que ya usaba la
-pantalla (ahora compartida en `utils/attributionYtd.ts`). **Falta volver a subir
-el Excel de julio** para que su copia en Firestore tenga el bloque YTD: la que
-hay ahora se subio con el parser viejo y no lo guardo, asi que tanto la web como
-el PowerPoint estan enseñando el acumulado hasta junio, no hasta julio, hasta
-que se repita esa subida. Antes de esto, misma fecha: las cajas resumen de
+Ultima actualizacion: 17 agosto 2026 (contribuidores: el bloque YTD que faltaba
+en la web y en el PowerPoint no era un problema del parser del Excel actual
+—se verifico contra los dos archivos reales de junio y julio, y el bloque YTD de
+las 6 carteras salia bien de los dos, como llevaba haciendolo desde siempre—,
+sino que el documento `julio_2026` que ya habia en Firestore se escribio antes
+de tener ese campo y no se ha vuelto a subir. Ademas se reforzo el parser para
+cuando el Excel traiga varias pestañas —una por mes, formato objetivo que aun no
+se usa— y se comprobo con un libro de prueba montado a partir de los dos
+archivos reales: cada pestaña se lee por separado, con su propio bloque MES y su
+propio YTD (acumulado hasta ese mes, no un YTD unico y aparte), y cada mes se
+guarda en su propio documento sin tocar los demas. De paso: el informe en
+PowerPoint ya no lleva portadilla por seccion —alargaban el documento sin decir
+nada que el titulo numerado no dijera ya—, la cabecera de cada hoja dice
+"ANDBANK · PORTFOLIO FUNDS", y la pestaña "Acumulado" de la pantalla pasa a ser
+la primera —y la que se ve por defecto—, con los meses detras en orden
+descendente. La diapositiva de contribuidores del PowerPoint tambien saca el
+bloque YTD debajo del mes, con las tablas tituladas "Contribuidores/Detractores
+Mes" y "Contribuidores/Detractores YTD": la primera version de ese bloque no lo
+enseñaba nunca porque buscaba el YTD solo en el mes activo del informe en vez de
+en toda la lista, la misma busqueda que ya usaba la pantalla (ahora compartida en
+`utils/attributionYtd.ts`). **Falta volver a subir el Excel de julio** para que
+su copia en Firestore tenga el bloque YTD: la que hay ahora se escribio antes de
+que ese campo se guardara, asi que tanto la web como el PowerPoint estan
+enseñando el acumulado hasta junio, no hasta julio, hasta que se repita esa
+subida. Antes de esto, misma fecha: las cajas resumen de
 perfil ya no dicen "YTD 2026" / "Junio" a fuego, sino la cabecera real de columna
 del Excel de rentabilidades. Y antes: escenarios de crisis reales en el stress
 test y caida de 2008 estimada por perfil, benchmark en el grafico de barras,
@@ -225,7 +233,18 @@ las dos como si fueran lo mismo ya ha causado un fallo (ver seccion 4).
   "ANDBANK · PORTFOLIO FUNDS" en las tres. Con un bloque YTD simulado (`ytd`
   añadido a mano sobre `MONTHLY_ATTRIBUTIONS`, porque los datos empaquetados no
   lo traen), la diapositiva de contribuidores saca 12 tablas en vez de 10 —las
-  dos nuevas del bloque "Acumulado"— y sigue sin salirse nada.
+  dos nuevas del bloque "Acumulado"—, con "Contribuidores/Detractores Mes" y
+  "Contribuidores/Detractores YTD" como titulo de cada una y sigue sin salirse
+  nada.
+- Parser de contribuidores contra los dos archivos reales, no simulados:
+  "LEADING CONTRIBUTORS - DETRACTORS - Julio.xlsx" y el de junio. Los dos son
+  una sola hoja util ("CONT-DETRACT ACTIVOS"; la segunda pestaña se descarta por
+  su propio nombre, "ya no"), y las dos veces sale el bloque YTD con datos en
+  los seis perfiles, no solo el del mes. Ademas, un libro de prueba con esas
+  mismas dos hojas renombradas "Cont-Detract Julio 2026" / "Cont-Detract Junio
+  2026" —simulando el formato de varias pestañas que el equipo aun no usa, con
+  texto alrededor del mes y el año en el nombre— da los dos periodos por
+  separado, cada uno con su propio MES y su propio YTD.
 
 ---
 
@@ -233,11 +252,13 @@ las dos como si fueran lo mismo ya ha causado un fallo (ver seccion 4).
 
 Por orden de valor:
 
-1. **Volver a subir "LEADING CONTRIBUTORS" de julio de 2026.** Se subio con el
-   parser viejo, que no guardaba el bloque YTD en el formato de una pestana por
-   mes (ver seccion 4). Repetir esa subida —sin tocar el archivo— para que el
-   documento `julio_2026` de Firestore incluya `ytd` y la pestaña "Acumulado" de
-   la web pase de enseñar el acumulado hasta junio a enseñarlo hasta julio.
+1. **Volver a subir "LEADING CONTRIBUTORS - DETRACTORS - Julio.xlsx".** El
+   documento `julio_2026` que ya hay en Firestore no incluye el campo `ytd`
+   (ver seccion 4); el archivo si lo trae —comprobado con
+   `node scripts/inspect-excel.mjs` contra el propio Excel—, asi que basta con
+   repetir la subida, sin tocar el archivo, para que la pestaña "Acumulado" de
+   la web y la diapositiva de contribuidores del PowerPoint pasen de enseñar el
+   acumulado hasta junio a enseñarlo hasta julio.
 
 2. ~~**Publicar `firestore.rules`.**~~ **Hecho el 12 de agosto de 2026.** Las
    dos colecciones nuevas (`backups` y `usage_stats`) ya tienen reglas
@@ -609,17 +630,31 @@ Por orden de valor:
   como `<c:v></c:v>` y PowerPoint lo pinta como hueco, no como cero. Es lo que
   permite que Conservador + y Agresivo + no aparezcan con una barra a 0% en las
   ventanas que no tienen (ver "un dato ausente no es un cero").
-- **El bloque YTD de contribuidores solo se guardaba en uno de los dos formatos
-  de Excel.** `contributorsProcessor.ts` admite una pestana por mes (formato
-  objetivo) y una unica hoja con el ultimo mes (formato actual), y **las dos**
-  traen en paralelo el bloque MES y el bloque YTD —son columnas vecinas de la
-  misma fila, no hojas distintas—. Pero el codigo solo leia YTD_SPEC en la rama
-  de una sola hoja; en la de una pestana por mes se leia el mes y se descartaba
-  el YTD sin decirlo. Como el archivo real usa esa segunda rama, cada subida de
-  contribuidores borraba la pestaña "Acumulado" de la web sin que el mensaje
-  verde avisara de nada raro. Julio de 2026 se subio con el parser viejo: su
-  documento en Firestore no tiene `ytd`, y la web esta enseñando el acumulado de
-  junio (el ultimo mes que si lo trajo) hasta que se repita esa subida.
+- **El archivo real de contribuidores es una sola hoja ("CONT-DETRACT
+  ACTIVOS"), no una pestaña por mes.** `contributorsProcessor.ts` admite los dos
+  formatos, pero el objetivo (una pestaña por mes, para cuando haya historial)
+  todavia no se usa: los archivos que sube el equipo cada mes tienen una unica
+  hoja util —la segunda pestaña, "CATEGORIAS (ya no)", esta descartada a
+  proposito por su propio nombre—. Esa rama **siempre** ha leido YTD_SPEC ademas
+  de MES_SPEC, verificado ahora contra los Excel reales de junio y julio con
+  `node scripts/inspect-excel.mjs`: las dos columnas —MES y YTD— viven una al
+  lado de la otra en la misma hoja, para los mismos seis perfiles, no en hojas
+  separadas. La rama de una pestaña por mes si tenia el fallo real —leia el mes
+  y descartaba el YTD sin decirlo—, pero no es la que toca hoy: importa de cara
+  a cuando el equipo empiece a subir un libro con varias pestañas de historial,
+  y se probo montando un libro de prueba con las dos hojas reales renombradas
+  "Cont-Detract Julio 2026" / "Cont-Detract Junio 2026" (nombre con texto
+  alrededor del mes y el año, no solo eso): las dos se leen por separado, cada
+  una con su propio MES y su propio YTD, y cada mes va a su propio documento sin
+  tocar los demas —asi que un archivo con diez meses de historial no borra nada,
+  solo añade o actualiza esos diez—.
+
+  Lo que si es real: el documento `julio_2026` que ya hay en Firestore no tiene
+  `ytd`. No es que el Excel de julio no lo traiga —lo trae, comprobado arriba—,
+  es que ese documento se escribio en algun momento anterior a que el codigo (o
+  el propio archivo) guardara ese campo, y no se ha vuelto a subir desde. La web
+  esta enseñando mientras tanto el acumulado de junio (el ultimo mes que si lo
+  tiene) hasta que se repita esa subida.
 - **Un dato de un mes sin YTD no debe dejar la pestaña en blanco si otro mes
   mas antiguo si lo trae.** `SectionContribuidores.tsx` no mira solo el mes mas
   reciente para la pestaña "Acumulado": recorre los periodos de mas nuevo a mas
