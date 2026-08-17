@@ -51,6 +51,11 @@ export interface MonthlyAttribution {
     contrib: ContributorItem[];
     detract: ContributorItem[];
   }[]; // Index corresponding to profileIndex (0..5)
+  /** Mismo formato, acumulado del año hasta este mes. Falta si el Excel no lo trajo. */
+  ytd?: {
+    contrib: ContributorItem[];
+    detract: ContributorItem[];
+  }[];
 }
 
 export interface CompositionFundItem {

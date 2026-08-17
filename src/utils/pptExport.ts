@@ -80,7 +80,7 @@ interface Deck {
 
 /** Cabecera de marca: identidad, titulo del informe, logo y filete. */
 function paintHeader(deck: Deck, slide: PptxGenJS.Slide) {
-  slide.addText('ANDBANK · CARTERAS MODELO', {
+  slide.addText('ANDBANK · PORTFOLIO FUNDS', {
     x: M.x, y: 0.14, w: 6, h: 0.18,
     fontSize: 6.5, bold: true, color: MUTED, charSpacing: 2, fontFace: FONT,
   });
@@ -139,28 +139,6 @@ function contentSlide(deck: Deck, n: number, title: string, note?: string): Pptx
   paintFooter(deck, slide);
   deck.slides.push(slide);
   return slide;
-}
-
-/** Portadilla: separa las secciones igual que los titulos numerados del PDF. */
-function dividerSlide(deck: Deck, n: number, title: string, subtitle: string) {
-  const slide = deck.pptx.addSlide();
-  slide.background = { color: 'FFFFFF' };
-  slide.addShape('rect', { x: 0, y: 0, w: 0.32, h: 5.625, fill: { color: RED } });
-  slide.addText(String(n).padStart(2, '0'), {
-    x: 0.95, y: 1.75, w: 3, h: 0.9,
-    fontSize: 46, bold: true, color: GREY, fontFace: FONT,
-  });
-  slide.addText(title, {
-    x: 0.95, y: 2.6, w: 7.5, h: 0.6,
-    fontSize: 24, bold: true, color: TEXT, fontFace: FONT,
-  });
-  slide.addShape('line', { x: 0.98, y: 3.25, w: 2.2, h: 0, line: { color: DARK_RED, width: 1.5 } });
-  slide.addText(subtitle, {
-    x: 0.95, y: 3.35, w: 7.5, h: 0.5,
-    fontSize: 10.5, color: MUTED, fontFace: FONT,
-  });
-  if (deck.logo) slide.addImage({ data: deck.logo, x: M.x + M.w - 1.05, y: 4.75, w: 1.05, h: 0.31 });
-  deck.slides.push(slide);
 }
 
 /**
@@ -419,8 +397,6 @@ export async function buildPresentation(data: PptData): Promise<void> {
 
   // ------------------------------------------------------------ rendimiento
   if (windows.cats.length > 0) {
-    dividerSlide(deck, 1, 'Resumen de Rendimiento', 'Rentabilidad anualizada neta por ventana temporal');
-
     // Con un solo perfil el indice cabe al lado de la cartera, periodo a
     // periodo. Con varios no: cada cartera tiene el suyo y seis pares de barras
     // por ventana no se pueden leer. Es la misma regla que en pantalla.
@@ -530,17 +506,11 @@ export async function buildPresentation(data: PptData): Promise<void> {
     `Capital inicial ${params.initialAmount.toLocaleString('es-ES')} € desde ` +
     params.startDateStr.split('-').reverse().join('/');
 
-  let backtestDrawn = false;
   backtestGroups.forEach((group) => {
     const renderIndices = group.benchmarkOf !== undefined ? [...group.indices, 999] : group.indices;
     const trajectories = trajFor(group.indices, group.benchmarkOf);
     const sim = simulateBacktest(params, renderIndices, trajectories);
     if (!sim) return;
-
-    if (!backtestDrawn) {
-      dividerSlide(deck, 2, 'Simulación de Backtest', backtestNote);
-      backtestDrawn = true;
-    }
 
     const label = group.benchmarkOf !== undefined ? ` · ${PROFILES[group.benchmarkOf]}` : '';
     const slide = contentSlide(deck, 2, `Simulación de Backtest${label}`, backtestNote);
@@ -629,10 +599,9 @@ export async function buildPresentation(data: PptData): Promise<void> {
     });
 
     if (withData.length > 0) {
-      dividerSlide(deck, 3, 'Análisis de Contribuidores', `Top 5 por contribución a la rentabilidad · ${attribution.label}`);
-
       withData.forEach((p) => {
         const block = attribution.data[p];
+        const ytdBlock = attribution.ytd?.[p];
         const slide = contentSlide(deck, 3, `Análisis de Contribuidores · ${PROFILES[p]}`, attribution.label);
 
         const table = (items: typeof block.contrib, title: string, fill: string) => {
@@ -654,10 +623,36 @@ export async function buildPresentation(data: PptData): Promise<void> {
           return [head, sub, ...rows];
         };
 
+        // El bloque MES y el YTD van en la misma diapositiva, uno debajo del
+        // otro: es la misma vista de pestañas que ofrece la pantalla, sin
+        // obligar a pasar de diapositiva para ver el acumulado del año. El
+        // desplazamiento del segundo bloque usa siempre 5 filas de margen
+        // (el maximo que puede traer una tabla), para que no se solapen
+        // aunque el mes tenga menos fondos que el acumulado.
+        const rowH = 0.22;
+        const blockRows = 2 + 5; // titulo + cabecera + hasta 5 fondos
+        const caption = (text: string, y: number) =>
+          slide.addText(text, {
+            x: M.x, y, w: M.w, h: 0.18,
+            fontSize: 8, bold: true, color: MUTED, charSpacing: 0.6, fontFace: FONT,
+          });
+
+        caption(`MES · ${attribution.label}`, BODY_TOP);
+        const monthY = BODY_TOP + 0.2;
         slide.addTable(table(block.contrib, 'Mayores contribuidores', '15803D') as any,
-          tableOpts({ x: M.x, y: BODY_TOP, w: 4.4, colW: [2.4, 1, 1], fontSize: 9, rowH: 0.26 }));
+          tableOpts({ x: M.x, y: monthY, w: 4.4, colW: [2.4, 1, 1], fontSize: 8.5, rowH }));
         slide.addTable(table(block.detract, 'Mayores detractores', 'B91C1C') as any,
-          tableOpts({ x: M.x + 4.7, y: BODY_TOP, w: 4.4, colW: [2.4, 1, 1], fontSize: 9, rowH: 0.26 }));
+          tableOpts({ x: M.x + 4.7, y: monthY, w: 4.4, colW: [2.4, 1, 1], fontSize: 8.5, rowH }));
+
+        if (ytdBlock && (ytdBlock.contrib.length > 0 || ytdBlock.detract.length > 0)) {
+          const ytdCapY = monthY + blockRows * rowH + 0.14;
+          caption(`ACUMULADO ${attribution.label.split(' ').pop()}`, ytdCapY);
+          const ytdY = ytdCapY + 0.2;
+          slide.addTable(table(ytdBlock.contrib, 'Mayores contribuidores', '15803D') as any,
+            tableOpts({ x: M.x, y: ytdY, w: 4.4, colW: [2.4, 1, 1], fontSize: 8.5, rowH }));
+          slide.addTable(table(ytdBlock.detract, 'Mayores detractores', 'B91C1C') as any,
+            tableOpts({ x: M.x + 4.7, y: ytdY, w: 4.4, colW: [2.4, 1, 1], fontSize: 8.5, rowH }));
+        }
       });
     }
   }
@@ -669,9 +664,6 @@ export async function buildPresentation(data: PptData): Promise<void> {
     );
 
     if (cats.length > 0) {
-      dividerSlide(deck, 4, 'Desglose de Fondos Subyacentes',
-        `Peso de cada fondo por categoría · Rebalanceo ${composition.label}`);
-
       // La columna de ISIN es la que trae el PDF y en pantalla; sin ella el
       // informe no identifica el fondo, solo lo nombra.
       const isinCol = 1.15;
@@ -723,7 +715,6 @@ export async function buildPresentation(data: PptData): Promise<void> {
     ? profiles.map((p) => ({ indices: [p], benchmarkOf: p as number | undefined }))
     : [{ indices: profiles, benchmarkOf: undefined as number | undefined }];
 
-  let drawdownDrawn = false;
   drawdownGroups.forEach((group) => {
     const keys = [
       ...group.indices.map((p) => ({ key: String(p), name: PROFILES[p], color: color(p) })),
@@ -733,11 +724,6 @@ export async function buildPresentation(data: PptData): Promise<void> {
     ].filter((k) => vlSeries[k.key]?.length);
 
     if (keys.length === 0) return;
-
-    if (!drawdownDrawn) {
-      dividerSlide(deck, 5, 'Análisis de Drawdown', 'Caída desde el último máximo alcanzado por cada cartera');
-      drawdownDrawn = true;
-    }
 
     const label = group.benchmarkOf !== undefined ? ` · ${PROFILES[group.benchmarkOf]}` : '';
     const slide = contentSlide(deck, 5, `Análisis de Drawdown${label}`, 'Caída desde el último máximo alcanzado');
@@ -798,9 +784,6 @@ export async function buildPresentation(data: PptData): Promise<void> {
 
   // -------------------------------------------------------- asset allocation
   if (assetAllocation) {
-    dividerSlide(deck, 6, 'Asset Allocation y Distribución Estratégica',
-      `Distribución por clase de activo, geografía, divisas y métricas de renta fija · Foto ${assetAllocation.label}`);
-
     // Donuts nativos, uno por perfil, con sus pesos al lado: el grafico solo no
     // dice cuanto pesa cada tramo.
     const mainRows = mainAllocationRows(assetAllocation);

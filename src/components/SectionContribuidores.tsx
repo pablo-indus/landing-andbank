@@ -10,14 +10,17 @@ export const SectionContribuidores: React.FC<{ forcedProfileIdx?: number; forced
   const blocks = React.useMemo(() => {
     if (attributions.length === 0) return MONTHLY_ATTRIBUTIONS as any[];
 
-    // El acumulado del año viene dentro del bloque mas reciente, no como periodo
+    // El acumulado del año viene dentro de cada bloque mensual, no como periodo
     // propio (acumula desde enero, asi que archivarlo como un mes lo falsearia).
-    // Aqui se expone como una pestaña mas para no perder esa vista.
-    const [latest] = attributions;
-    const ytdTab =
-      latest?.ytd && latest.ytd.length > 0
-        ? [{ month: `ytd_${latest.month}`, label: `Acumulado ${latest.label.split(' ').pop()}`, data: latest.ytd }]
-        : [];
+    // Se expone como una pestaña mas, con los valores del mes mas reciente que
+    // lo traiga: si el ultimo Excel subido no incluyera el bloque YTD, no tiene
+    // sentido dejar la pestaña en blanco en vez de mostrar el ultimo disponible.
+    const ytdSource = attributions.find(
+      (a: any) => a?.ytd && a.ytd.some((p: any) => p.contrib.length > 0 || p.detract.length > 0)
+    );
+    const ytdTab = ytdSource
+      ? [{ month: `ytd_${ytdSource.month}`, label: `Acumulado ${ytdSource.label.split(' ').pop()}`, data: ytdSource.ytd }]
+      : [];
 
     // El mes mas reciente va primero (es lo que se consulta a diario) y el
     // acumulado justo detras, como estaban ordenados antes.

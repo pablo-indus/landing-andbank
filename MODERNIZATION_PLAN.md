@@ -2,14 +2,23 @@
 
 Documento de traspaso. Si empiezas una conversacion nueva, lee SOLO este archivo:
 contiene el estado actual, lo que falta y las trampas ya descubiertas.
-Ultima actualizacion: 17 agosto 2026 (las cajas resumen de perfil ya no dicen
-"YTD 2026" / "Junio" a fuego: las etiquetas de ano y mes salen de la cabecera de
-columna del Excel de rentabilidades, igual que las cifras). Antes de eso, misma
-fecha: escenarios de crisis reales en el stress test y caida de 2008 estimada por
-perfil, benchmark en el grafico de barras, nueve eventos macro en el drawdown,
-tabla de composicion y de asset allocation mas legibles, descargo de la matriz de
-correlacion, confirmacion al restaurar una copia y PowerPoint rehecho para
-parecerse al PDF.
+Ultima actualizacion: 17 agosto 2026 (el parser de contribuidores no guardaba el
+bloque YTD cuando el Excel trae una pestana por mes, solo en el formato de una
+sola hoja; por eso la pestana "Acumulado" desaparecio de la web al subir julio.
+Corregido, y de paso: el informe en PowerPoint ya no lleva portadilla por seccion
+—alargaban el documento sin decir nada que el titulo numerado no dijera ya—, la
+diapositiva de contribuidores saca tambien el bloque YTD debajo del mes, y la
+cabecera de cada hoja dice "ANDBANK · PORTFOLIO FUNDS"). **Falta volver a subir
+el Excel de julio** para que su copia en Firestore tenga el bloque YTD: la que
+hay ahora se subio con el parser viejo y no lo guardo, asi que la pestana
+"Acumulado" de la web esta enseñando el acumulado hasta junio, no hasta julio,
+hasta que se repita esa subida. Antes de esto, misma fecha: las cajas resumen de
+perfil ya no dicen "YTD 2026" / "Junio" a fuego, sino la cabecera real de columna
+del Excel de rentabilidades. Y antes: escenarios de crisis reales en el stress
+test y caida de 2008 estimada por perfil, benchmark en el grafico de barras,
+nueve eventos macro en el drawdown, tabla de composicion y de asset allocation
+mas legibles, descargo de la matriz de correlacion, confirmacion al restaurar una
+copia y PowerPoint rehecho para parecerse al PDF.
 El 12 de agosto: informe en PowerPoint, comparacion con benchmark en los
 informes, copias automaticas antes de cada subida, contador de uso y la tanda de
 arreglos de formato que reviso el equipo; ese mismo dia, ya en produccion:
@@ -119,6 +128,10 @@ las dos como si fueran lo mismo ya ha causado un fallo (ver seccion 4).
 | Confirmacion al restaurar | Dialogo propio que explica que hace, con el boton de confirmar en rojo |
 | Informe en PowerPoint | Rehecho: portadillas de seccion, cabecera y pie con "x / total", grafico de barras de ventanas, tarjetas KPI, columna ISIN, donuts nativos, tabla de indices y descargo legal |
 | Etiquetas "YTD" y del mes en las cajas resumen de perfil | Ya no van fijas ("YTD 2026", "Junio"): `adaptKpis` (`useMonthlyReports.ts`) devuelve tambien el nombre real de esas dos columnas del Excel, y `KpiStrip.tsx` las pinta tal cual |
+| Bloque YTD de contribuidores en el formato "una pestana por mes" | `contributorsProcessor.ts` tambien lo lee ahi, no solo en el de una sola hoja. La pestaña "Acumulado" de la web ya no depende de que mes se subiera con el formato antiguo |
+| Portadillas por seccion del PowerPoint | Quitadas: el titulo numerado de cada diapositiva ya dice la seccion. Un perfil pasa de 18 a 12 diapositivas, los seis de 23 a 17, y los seis con benchmark de 34 a 28 |
+| Bloque YTD en la diapositiva de contribuidores del PowerPoint | Sale debajo del bloque del mes, en la misma diapositiva, con los mismos datos que la pestaña "Acumulado" de la pantalla |
+| Cabecera del PowerPoint | Dice "ANDBANK · PORTFOLIO FUNDS" en vez de "ANDBANK · CARTERAS MODELO" |
 
 **Validaciones independientes que se pasaron** (no fiarse solo del mensaje verde):
 
@@ -198,6 +211,14 @@ las dos como si fueran lo mismo ya ha causado un fallo (ver seccion 4).
   de cada perfil se parezcan a las de `corrData.ts`: coinciden entre el 86% y el
   94%, asi que ningun par de perfiles esta intercambiado
   (`node scripts/test-correlation-parser.ts`).
+- PowerPoint sin portadillas (17 de agosto), generado con `scripts/check-ppt.mts`
+  y leido por dentro: un perfil da 12 diapositivas, los seis 17 y los seis con
+  benchmark 28 —seis menos que antes en los tres casos, una por seccion con
+  contenido—, y **ningun objeto se sale de la diapositiva**. La cabecera dice
+  "ANDBANK · PORTFOLIO FUNDS" en las tres. Con un bloque YTD simulado (`ytd`
+  añadido a mano sobre `MONTHLY_ATTRIBUTIONS`, porque los datos empaquetados no
+  lo traen), la diapositiva de contribuidores saca 12 tablas en vez de 10 —las
+  dos nuevas del bloque "Acumulado"— y sigue sin salirse nada.
 
 ---
 
@@ -205,7 +226,13 @@ las dos como si fueran lo mismo ya ha causado un fallo (ver seccion 4).
 
 Por orden de valor:
 
-1. ~~**Publicar `firestore.rules`.**~~ **Hecho el 12 de agosto de 2026.** Las
+1. **Volver a subir "LEADING CONTRIBUTORS" de julio de 2026.** Se subio con el
+   parser viejo, que no guardaba el bloque YTD en el formato de una pestana por
+   mes (ver seccion 4). Repetir esa subida —sin tocar el archivo— para que el
+   documento `julio_2026` de Firestore incluya `ytd` y la pestaña "Acumulado" de
+   la web pase de enseñar el acumulado hasta junio a enseñarlo hasta julio.
+
+2. ~~**Publicar `firestore.rules`.**~~ **Hecho el 12 de agosto de 2026.** Las
    dos colecciones nuevas (`backups` y `usage_stats`) ya tienen reglas
    publicadas, y la primera subida de niveles de credito con copia de seguridad
    funciono (30 periodos, copia de 82 documentos). Queda escrito porque vuelve a
@@ -214,7 +241,7 @@ Por orden de valor:
    publicar y **esperar a que propague** (hasta un minuto largo; el error de
    permisos sigue saliendo mientras tanto).
 
-2. **Subir los archivos una vez** desde el panel. Ya no queda ninguna seccion
+3. **Subir los archivos una vez** desde el panel. Ya no queda ninguna seccion
    leyendo datos escritos a mano —las siete subidas cubren la web entera— pero
    **una seccion no cambia hasta que su archivo se sube al menos una vez**:
    mientras no exista su documento, sigue pintando los datos empaquetados en el
@@ -229,7 +256,7 @@ Por orden de valor:
    El Perfilador es el unico que no necesita subida propia: sale de las mismas
    series que Drawdown, asi que se actualiza con el libro VL.
 
-3. **Bundle, lo que queda**: 2.939 kB, de los cuales 1,71 MB son
+4. **Bundle, lo que queda**: 2.939 kB, de los cuales 1,71 MB son
    `generatedData.ts`. Desde que Cambios, Credito, Contribuidores y Composicion
    leen de Firestore, ese archivo **ya solo sirve de respaldo** por si la base de
    datos no responde. Quitarlo bajaria el bundle a la mitad otra vez, pero deja
@@ -237,13 +264,13 @@ Por orden de valor:
    producto, no una limpieza. Lo mismo con `src/data/vlData.json` y
    `vlData.raw` (1,2 MB entre los dos), que ya no los importa nadie —esos si se
    pueden borrar sin consecuencias, no entran en el bundle, solo pesan en el repo.
-4. **Perfiles sin historico largo**: Conservador + y Agresivo + no tienen datos en
+5. **Perfiles sin historico largo**: Conservador + y Agresivo + no tienen datos en
    ventanas de 1/2/3/5 años ni en el historico anual. Aparecen sin barra, y en el
    grafico de retorno/riesgo sin punto de cartera (su benchmark si sale, porque las
    series VL de ambos si llegan). Es correcto, pero conviene que el equipo lo sepa.
    Lo que si estaba mal y ya no: esos huecos se llevaban por delante las
    etiquetas de periodo del grafico de barras (ver seccion 4).
-5. **Eje X del grafico de retorno/riesgo**: llega al 16% y ninguna serie pasa del
+6. **Eje X del grafico de retorno/riesgo**: llega al 16% y ninguna serie pasa del
    13,3%. Estaba dimensionado para las volatilidades inventadas, que subian a 14,8.
    Se puede apretar, es solo presentacion.
 
@@ -575,6 +602,24 @@ Por orden de valor:
   como `<c:v></c:v>` y PowerPoint lo pinta como hueco, no como cero. Es lo que
   permite que Conservador + y Agresivo + no aparezcan con una barra a 0% en las
   ventanas que no tienen (ver "un dato ausente no es un cero").
+- **El bloque YTD de contribuidores solo se guardaba en uno de los dos formatos
+  de Excel.** `contributorsProcessor.ts` admite una pestana por mes (formato
+  objetivo) y una unica hoja con el ultimo mes (formato actual), y **las dos**
+  traen en paralelo el bloque MES y el bloque YTD —son columnas vecinas de la
+  misma fila, no hojas distintas—. Pero el codigo solo leia YTD_SPEC en la rama
+  de una sola hoja; en la de una pestana por mes se leia el mes y se descartaba
+  el YTD sin decirlo. Como el archivo real usa esa segunda rama, cada subida de
+  contribuidores borraba la pestaña "Acumulado" de la web sin que el mensaje
+  verde avisara de nada raro. Julio de 2026 se subio con el parser viejo: su
+  documento en Firestore no tiene `ytd`, y la web esta enseñando el acumulado de
+  junio (el ultimo mes que si lo trajo) hasta que se repita esa subida.
+- **Un dato de un mes sin YTD no debe dejar la pestaña en blanco si otro mes
+  mas antiguo si lo trae.** `SectionContribuidores.tsx` no mira solo el mes mas
+  reciente para la pestaña "Acumulado": recorre los periodos de mas nuevo a mas
+  viejo y usa el primero que traiga `ytd` con datos. Sirve de red mientras se
+  repite la subida de julio, pero no sustituye a subir el archivo bueno: lo que
+  enseña mientras tanto es el acumulado hasta el ultimo mes que lo trajo, no
+  hasta el mas reciente.
 - **`vlData.ts` y `generatedData.ts` son necesarios**, aunque parezcan huerfanos:
   `portfolioData.ts` los importa. `vlData.ts` son 1,2 MB en una sola linea, por eso
   `wc -l` dice 0. **No abrirlos enteros** (gasta muchisimo contexto).
@@ -765,14 +810,23 @@ solo datos.
 Desde el 17 de agosto se parece bastante mas al PDF:
 
 - **Portada** igual que la del informe, con el pie de la sociedad gestora.
-- **Portadilla por seccion** (banda roja, numero grande y subtitulo), y en cada
-  diapositiva de contenido la **cabecera de marca**, el titulo numerado con su
-  filete rojo, el **pie con el descargo** y la numeracion **"x / total"**.
+- En cada diapositiva de contenido, la **cabecera de marca** ("ANDBANK ·
+  PORTFOLIO FUNDS"), el titulo numerado con su filete rojo, el **pie con el
+  descargo** y la numeracion **"x / total"**. Ya no hay portadilla de seccion
+  aparte (banda roja, numero grande y subtitulo): el titulo numerado de la
+  primera diapositiva de cada seccion ya decia de que trataba, y la portadilla
+  solo añadia paginas sin decir nada nuevo. Quitarla no toca la numeracion de
+  seccion (01-06), solo el recuento total de diapositivas: un perfil da 12
+  diapositivas en vez de 18, los seis 17 en vez de 23, y los seis con benchmark
+  28 en vez de 34.
 - **Rendimiento** sale ahora con un grafico de barras nativo de las ventanas,
   ademas de la tabla. Con un solo perfil y la casilla de benchmark marcada se
   añade la serie del indice, igual que en pantalla.
 - **Backtest**: tarjetas de KPI con una o dos curvas y tabla a partir de tres,
   que es el mismo corte que hace el PDF.
+- **Contribuidores** saca el bloque YTD debajo del mes, en la misma diapositiva
+  (antes solo salia el mes): mismos datos que la pestaña "Acumulado" de la
+  pantalla, tomados de `attribution.ytd`.
 - **Desglose de fondos** con **columna de ISIN**, y varias categorias por
   diapositiva en lugar de una por categoria.
 - **Drawdown** añade una tabla con la caida maxima de cada serie y desde que año
@@ -783,8 +837,9 @@ Desde el 17 de agosto se parece bastante mas al PDF:
   las cifras y advertencia), que no lleva numero de seccion a proposito: no es
   una septima seccion del informe.
 
-Tamaños de referencia: un perfil da 18 diapositivas, los seis 23, y los seis con
-benchmark 34 (Backtest y Drawdown salen una vez por perfil, como en el PDF).
+Tamaños de referencia (sin portadillas): un perfil da 12 diapositivas, los seis
+17, y los seis con benchmark 28 (Backtest y Drawdown salen una vez por perfil,
+como en el PDF).
 
 **Detalles que conviene no deshacer:**
 

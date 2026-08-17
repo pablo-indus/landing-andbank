@@ -195,7 +195,12 @@ export async function processContributorsExcel(file: File): Promise<Contributors
       const data = readBlock(rows, headerIdx, MES_SPEC);
       if (data.every((p) => p.contrib.length === 0 && p.detract.length === 0)) continue;
 
-      blocks[period] = { month: period, label: capitalise(period), data };
+      // Cada pestana lleva tambien su bloque YTD (acumulado hasta ese mes), no
+      // solo el del mes: se guarda igual que en el formato de una sola hoja.
+      const ytd = readBlock(rows, headerIdx, YTD_SPEC);
+      const hasYtd = ytd.some((p) => p.contrib.length > 0 || p.detract.length > 0);
+
+      blocks[period] = { month: period, label: capitalise(period), data, ...(hasYtd ? { ytd } : {}) };
     }
   } else {
     // Formato actual: una sola hoja con el ultimo mes y el acumulado del año.
