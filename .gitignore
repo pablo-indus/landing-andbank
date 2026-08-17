@@ -11,3 +11,7 @@ coverage/
 .env*.local
 # Copias de seguridad de Firestore (datos, no codigo)
 backups/
+
+# Artefactos de la comprobacion del PowerPoint (ver scripts/check-ppt.mts)
+scripts/.check-ppt.mjs
+*.pptx

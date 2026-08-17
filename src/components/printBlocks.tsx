@@ -1,6 +1,8 @@
 import React from 'react';
 import { PieChart, Pie, Cell } from 'recharts';
 import { PROFILES } from '../data/portfolioData';
+import { allocationColor } from '../utils/allocationColors';
+import { breakdownParent } from '../utils/allocationRows';
 
 /*
   Piezas del informe impreso que no se pueden reutilizar de las secciones de
@@ -40,15 +42,12 @@ const chunk = <T,>(arr: T[], size: number): T[][] => {
 const TH = 'px-2 py-1 text-[8px] font-bold uppercase tracking-wider';
 const TD = 'px-2 py-[3px] text-[8.5px]';
 
-export const AA_COLORS = (label: string) => {
-  const l = label.toLowerCase();
-  if (l.includes('monetario')) return '#121212';
-  if (l.includes('fija')) return '#D8D4CE';
-  if (l.includes('variable')) return '#E32119';
-  if (l.includes('commodities') || l.includes('oro')) return '#D4C77E';
-  if (l.includes('alternativos')) return '#7A1611';
-  return '#9CA3AF';
-};
+/**
+ * La paleta vive en `utils/allocationColors` porque el PowerPoint pinta los
+ * mismos donuts: si cada formato tuviera la suya, el informe cambiaria de
+ * colores segun se exportara a PDF o a PPT.
+ */
+export const AA_COLORS = allocationColor;
 
 /* ---------------------------------------------------------------- composicion */
 
@@ -271,13 +270,23 @@ export function allocationBlocks(snapshot: any, profiles: number[]): PrintBlock[
                 {group.title}
               </td>
             </tr>
-            {group.rows.map((row: any) => (
+            {group.rows.map((row: any, rowIdx: number) => {
+              // "USD - directo" y "USD - indirecto" desglosan "USD": van en
+              // cursiva y sangradas para que no se sumen a ojo con su fila madre.
+              const parent = breakdownParent(
+                row.label,
+                group.rows.slice(0, rowIdx).map((r: any) => String(r.label))
+              );
+              return (
               <tr key={row.label} className="border-b border-zinc-100">
-                <td className={`${TD} text-zinc-800`}>{row.label}</td>
+                <td className={`${TD} ${parent ? 'pl-4 italic text-zinc-500' : 'text-zinc-800'}`}>{row.label}</td>
                 {profiles.map((p) => {
                   const v = row.values[p];
                   return (
-                    <td key={p} className={`${TD} text-right font-mono tabular-nums text-zinc-700`}>
+                    <td
+                      key={p}
+                      className={`${TD} text-right font-mono tabular-nums ${parent ? 'italic text-zinc-500' : 'text-zinc-700'}`}
+                    >
                       {v === null || v === undefined || v === 0 ? (
                         <span className="text-zinc-300">—</span>
                       ) : row.isPct ? (
@@ -289,7 +298,8 @@ export function allocationBlocks(snapshot: any, profiles: number[]): PrintBlock[
                   );
                 })}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         ),
       });

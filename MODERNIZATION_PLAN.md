@@ -2,14 +2,19 @@
 
 Documento de traspaso. Si empiezas una conversacion nueva, lee SOLO este archivo:
 contiene el estado actual, lo que falta y las trampas ya descubiertas.
-Ultima actualizacion: 12 agosto 2026 (informe en PowerPoint, comparacion con
-benchmark en los informes, copias automaticas antes de cada subida, contador de
-uso y la tanda de arreglos de formato que reviso el equipo; ese mismo dia, ya en
-produccion: reglas publicadas, primera subida con copia, el panel deja de crecer
-sin tope y cada copia guarda el nombre del Excel). El 11 de agosto,
-antes: Perfilador, Style Box y Correlacion conectados a Firestore, escala de
-color nueva en la matriz, estilo corporativo e informe PDF rehecho. **Ya no
-queda ninguna seccion leyendo datos escritos a mano.**
+Ultima actualizacion: 17 agosto 2026 (tanda pedida por el equipo: escenarios de
+crisis reales en el stress test y caida de 2008 estimada por perfil, benchmark en
+el grafico de barras, nueve eventos macro en el drawdown, tabla de composicion y
+de asset allocation mas legibles, descargo de la matriz de correlacion,
+confirmacion al restaurar una copia y PowerPoint rehecho para parecerse al PDF).
+El 12 de agosto: informe en PowerPoint, comparacion con benchmark en los
+informes, copias automaticas antes de cada subida, contador de uso y la tanda de
+arreglos de formato que reviso el equipo; ese mismo dia, ya en produccion:
+reglas publicadas, primera subida con copia, el panel deja de crecer sin tope y
+cada copia guarda el nombre del Excel. El 11 de agosto, antes: Perfilador, Style
+Box y Correlacion conectados a Firestore, escala de color nueva en la matriz,
+estilo corporativo e informe PDF rehecho. **Ya no queda ninguna seccion leyendo
+datos escritos a mano.**
 
 > **Si tocas `firestore.rules`, hay que publicarlas a mano** en la consola de
 > Firebase; el push a GitHub no las despliega. Las colecciones `backups` y
@@ -100,6 +105,16 @@ las dos como si fueran lo mismo ya ha causado un fallo (ver seccion 4).
 | Copias automaticas antes de cada subida | `services/backups.ts`. Se guardan las 10 ultimas y se restauran desde el panel. Cada una anota el **nombre del Excel** que se subio despues |
 | Contador de uso | `services/usage.ts`. Visitas y descargas por dia, sin cookies ni terceros |
 | Orden de secciones | Correlacion pasa a ir detras de Credito. Numeracion 00-10 renumerada |
+| Escenarios del stress test | Seis: COVID, 2022, SVB 2023, 4Q 2018 y deuda europea 2011-12 con datos reales, mas 2008 estimado. Cada uno se pinta solo para las series que ya existian |
+| Caida de 2008 por perfil | Sale del asset allocation real de cada cartera; la del indice, escalando esa caida por la relacion medida indice/cartera. Antes el indice era un -50% fijo para los seis |
+| Benchmark en el grafico de barras | Casilla en Rendimiento, activa solo con un perfil. Seis periodos; "Desde 2009" no lleva porque los indices arrancan en julio de 2011 |
+| Etiquetas de periodo del grafico de barras | Se dibujan una por grupo, ya no colgadas de "la barra del centro" |
+| Eventos macro en Drawdown | Nueve, recortados al periodo visible y con las etiquetas repartidas en dos alturas |
+| Columna ISIN de Composicion | Vacia en las filas de categoria (antes ponia "Categoría") |
+| Desgloses de divisa | "USD - directo" y "USD - indirecto" salen en cursiva y sangradas en pantalla, PDF y PPT (`utils/allocationRows.ts`) |
+| Descargo de la matriz de correlacion | Plegado, como el de la composicion de benchmarks |
+| Confirmacion al restaurar | Dialogo propio que explica que hace, con el boton de confirmar en rojo |
+| Informe en PowerPoint | Rehecho: portadillas de seccion, cabecera y pie con "x / total", grafico de barras de ventanas, tarjetas KPI, columna ISIN, donuts nativos, tabla de indices y descargo legal |
 
 **Validaciones independientes que se pasaron** (no fiarse solo del mensaje verde):
 
@@ -143,6 +158,36 @@ las dos como si fueran lo mismo ya ha causado un fallo (ver seccion 4).
   habia escritas a mano (`node scripts/test-stylebox-parser.ts`). No basta con
   contar fechas: las dos columnas de cada perfil son intercambiables a ojo y
   darles la vuelta moveria cada punto a su reflejo sin que fallara nada.
+- Benchmark del grafico de barras: la barra gris de "1 año" del perfil Moderado
+  da 11,4%, exactamente lo que ya mostraba el grafico de retorno/riesgo para ese
+  mismo indice y ventana. Son dos caminos distintos —uno lee `vl_series` y el
+  otro `performance_data`— y coinciden porque los dos pasan por `windowStats`.
+- Etiquetas del grafico de barras: con Conservador + y Agresivo + marcados (que
+  no tienen dato en casi ninguna ventana) y añadiendo despues un tercer perfil,
+  las siete etiquetas de periodo siguen ahi. Es el caso exacto que las hacia
+  desaparecer.
+- Eventos del drawdown: en "Desde 2009" salen los nueve, en 5 años solo los tres
+  que caen dentro y en 1 año ninguno; **ningun** rectangulo se sale del area del
+  grafico, y las nueve etiquetas se reparten en dos alturas sin solaparse
+  (medido con `getBBox` en el navegador).
+- Desgloses de divisa: las dos filas en cursiva suman la de su divisa madre en
+  los seis perfiles (6,3 / 6,9 / 14,6 / 19,1 / 28,2 / 32,9), asi que lo que se
+  marca como desglose es de verdad un desglose.
+- Caida simulada de 2008: la del indice ya no es la misma para todos. Va de
+  -6,1% en Conservador + a -57,6% en Agresivo +, y esta ultima queda cerca de lo
+  que de verdad cayo el MSCI World en 2008-09, que es el indice de ese perfil.
+- Dialogo de restaurar: montando su maqueta en el navegador con la pantalla a
+  420 px de alto, la tarjeta se queda en 378 px, el boton rojo sigue visible y
+  lo que se desplaza es el cuerpo.
+- Paginacion del PDF **despues** de esta tanda: sigue dando 4 hojas con un
+  perfil, 6 con los seis y 5 con un perfil y benchmark. Son las mismas cifras
+  que ya estaban en este documento.
+- PowerPoint: generado fuera del navegador con `scripts/check-ppt.mts` y leido
+  por dentro. Un perfil da 18 diapositivas, los seis 23 y los seis con benchmark
+  34, siempre con graficos y tablas nativos (19 y 31 en el ultimo caso), y
+  **ningun objeto se sale de la diapositiva** en los cinco repartos probados.
+  Ademas, un dato ausente en el grafico de ventanas se escribe como `<c:v></c:v>`
+  —hueco— y no como un cero.
 - Correlaciones: las seis matrices son cuadradas, simetricas, con unos en la
   diagonal y todos los valores dentro de [-1, 1]. Y como el reparto hoja ->
   perfil se hace **por posicion**, se comprueba ademas que las listas de fondos
@@ -192,6 +237,8 @@ Por orden de valor:
    ventanas de 1/2/3/5 años ni en el historico anual. Aparecen sin barra, y en el
    grafico de retorno/riesgo sin punto de cartera (su benchmark si sale, porque las
    series VL de ambos si llegan). Es correcto, pero conviene que el equipo lo sepa.
+   Lo que si estaba mal y ya no: esos huecos se llevaban por delante las
+   etiquetas de periodo del grafico de barras (ver seccion 4).
 5. **Eje X del grafico de retorno/riesgo**: llega al 16% y ninguna serie pasa del
    13,3%. Estaba dimensionado para las volatilidades inventadas, que subian a 14,8.
    Se puede apretar, es solo presentacion.
@@ -469,6 +516,61 @@ Por orden de valor:
   Ademas, con la tolerancia en 0% no cumple ningun perfil y aun asi se
   recomendaba el primero: el indice arrancaba en 0 y el aviso "Ninguna cartera
   cumple" no se mostraba nunca, porque se comprobaba `!== -1`.
+- **Una etiqueta colgada de "la barra del centro" desaparece sola.** El grafico
+  de barras dibujaba el rotulo del periodo en la barra cuyo indice fuera
+  `floor(nº de perfiles / 2)`, pero ese indice se contaba sobre los perfiles
+  **marcados** y la posicion sobre los que **tienen dato**. Con Conservador + y
+  Agresivo + marcados —que no tienen historico en casi ninguna ventana— mas un
+  tercer perfil, en la mayoria de los grupos solo quedaba una barra, su indice
+  era 0 y el rotulo no se pintaba nunca. Ahora las etiquetas se dibujan aparte,
+  una por periodo, y no dependen de que haya barras.
+- **El `<svg>` de las secciones va con `overflow-visible`.** Las bandas de los
+  eventos del drawdown se dibujaban siempre, con la coordenada que saliera: con
+  el periodo en 1 o 3 años, la de 2020 caia en negativo y se pintaba a la
+  izquierda del eje, encima de las etiquetas de porcentaje. Todo lo que se
+  posicione por fecha hay que recortarlo al area del grafico y descartarlo si
+  queda fuera de la ventana visible.
+- **`trajValue` no dice "no hay dato": devuelve el primer valor de la serie.**
+  En un escenario de stress test anterior al arranque de una cartera, eso pinta
+  una linea perfectamente plana, que es exactamente como se lee "esta cartera
+  aguanto la crisis sin caer". Por eso los escenarios reales comprueban que la
+  serie ya existiera en la fecha de inicio y dejan fuera —diciendolo— a las que
+  no. Con la crisis de deuda europea eso deja fuera a cuatro de los seis
+  perfiles: solo Conservador + y Conservador llegan a julio de 2011.
+- **La crisis de 2008 no esta en ningun dato y no puede estarlo.** Las carteras
+  empiezan entre noviembre de 2010 y 2018, y **los seis indices arrancan el 16 de
+  julio de 2011**. El escenario se conserva porque el equipo lo pide, pero su
+  caida se **estima** y va marcada: la de la cartera aplicando a su asset
+  allocation real un retroceso declarado por clase de activo (RV -55%, RF -8%,
+  alternativos -15%, monetario 0%) y la del indice escalando esa cifra por la
+  relacion medida entre la caida maxima del indice y la de esa misma cartera en
+  el historico que si existe. No sustituir esos supuestos por una tabla de
+  numeros bonitos sin dejar dicho de donde salen.
+- **En stress test no se puede apagar el formulario entero.** Estaba con
+  `pointer-events-none` sobre todo el bloque, asi que para comparar una crisis
+  entre perfiles habia que salir del modo, cambiar de perfil y volver a entrar.
+  Ahora solo se apagan la fecha y las aportaciones, que son las que decide el
+  escenario; el perfil, el importe y la casilla del benchmark siguen vivos.
+- **El `autoPage` de pptxgenjs crea diapositivas sin maqueta.** Las que se
+  inventa para continuar una tabla larga salen sin cabecera, sin titulo de
+  seccion, sin pie y sin numero, asi que el informe acababa con hojas de dos
+  estilos. Las tablas largas del PowerPoint se reparten a mano
+  (`paginatedTable`), cortando entre categorias y repitiendo el titulo con
+  "(cont.)", que es lo mismo que hace la maqueta del PDF.
+- **En una diapositiva, una tabla anclada a una `y` fija se sale por abajo.** La
+  misma diapositiva lleva dos filas con un perfil y siete con los seis: con la
+  coordenada escrita a mano, el caso de seis perfiles —el que mas se usa— se
+  salia de la diapositiva sin que nada avisara. Se calcula con `tableTop()`,
+  desde el pie hacia arriba, y el grafico se queda con lo que sobra.
+  `scripts/inspect-pptx.mjs` comprueba que ningun objeto se salga.
+- **PowerPoint no tiene campo de "numero total de diapositivas".** El "x / total"
+  del pie hay que escribirlo, y por eso se añade al final, cuando el deck ya esta
+  montado (`numberSlides`). Si se añade una diapositiva despues de esa llamada,
+  sale sin numero.
+- **Un `null` en la serie de un grafico nativo si vale.** pptxgenjs lo escribe
+  como `<c:v></c:v>` y PowerPoint lo pinta como hueco, no como cero. Es lo que
+  permite que Conservador + y Agresivo + no aparezcan con una barra a 0% en las
+  ventanas que no tienen (ver "un dato ausente no es un cero").
 - **`vlData.ts` y `generatedData.ts` son necesarios**, aunque parezcan huerfanos:
   `portfolioData.ts` los importa. `vlData.ts` son 1,2 MB en una sola linea, por eso
   `wc -l` dice 0. **No abrirlos enteros** (gasta muchisimo contexto).
@@ -524,6 +626,12 @@ panel hay una lista con las diez ultimas y un boton de restaurar. Restaurar
 devuelve solo los documentos que aquella subida toco; lo que se haya subido
 despues por otro lado se queda como esta.
 
+El boton **no restaura al pulsarlo**: abre un dialogo aparte que dice que copia
+es, cuantos documentos toca y que pasa con lo subido despues, y ahi si esta el
+boton rojo de confirmar. Antes la confirmacion aparecia en la propia linea de la
+lista, justo donde acababa de estar el boton de restaurar: dos clics seguidos en
+el mismo sitio deshacian una subida sin querer.
+
 Para una copia en disco, fuera de Firebase:
 
 ```
@@ -552,6 +660,19 @@ node scripts/generate-vldata.mjs "<VL>"              # regenerar vlData.ts
 node scripts/print-pdf.mjs 2 informe.pdf             # el PDF sin tocar el navegador
 BENCHMARK=1 node scripts/print-pdf.mjs 0,4 x.pdf     # el PDF con el indice de cada perfil
 ```
+
+Para revisar el PowerPoint sin abrirlo (hace falta empaquetar antes, porque el
+modulo importa rutas sin extension):
+
+```
+npx esbuild scripts/check-ppt.mts --bundle --platform=node --format=esm --outfile=scripts/.check-ppt.mjs
+node scripts/.check-ppt.mjs 0,1,2,3,4,5 bench   # genera el .pptx en la raiz
+node scripts/inspect-pptx.mjs <archivo.pptx>    # diapositivas, graficos, tablas y desbordes
+TITLES=1 node scripts/inspect-pptx.mjs <archivo.pptx>   # ademas, el titulo de cada una
+```
+
+`inspect-pptx.mjs` avisa si algun objeto se sale de la diapositiva, que es el
+fallo que no se ve hasta que alguien abre el archivo delante de un cliente.
 
 `audit-benchmarks.ts` sale con codigo distinto de cero si algo no cuadra, asi que
 sirve tal cual despues de regenerar `vlData.ts`.
@@ -632,9 +753,34 @@ de 4 hojas a 5; dos perfiles, a 7.
 **El PowerPoint es otro camino distinto** (`src/utils/pptExport.ts`): no
 reaprovecha la maqueta del PDF ni las secciones de pantalla, porque una hoja A4
 vertical no cabe en una diapositiva 16:9. Construye el deck con tablas y graficos
-nativos de PowerPoint —editables— a partir de los mismos datos del hook y de la
-misma `simulateBacktest`. Si se toca el contenido del informe hay que tocar los
-dos sitios: no comparten maqueta, solo datos.
+nativos de PowerPoint —editables— a partir de los mismos datos del hook, de la
+misma `simulateBacktest` y de las mismas `windowStats` y `maxDrawdown`. Si se
+toca el contenido del informe hay que tocar los dos sitios: no comparten maqueta,
+solo datos.
+
+Desde el 17 de agosto se parece bastante mas al PDF:
+
+- **Portada** igual que la del informe, con el pie de la sociedad gestora.
+- **Portadilla por seccion** (banda roja, numero grande y subtitulo), y en cada
+  diapositiva de contenido la **cabecera de marca**, el titulo numerado con su
+  filete rojo, el **pie con el descargo** y la numeracion **"x / total"**.
+- **Rendimiento** sale ahora con un grafico de barras nativo de las ventanas,
+  ademas de la tabla. Con un solo perfil y la casilla de benchmark marcada se
+  añade la serie del indice, igual que en pantalla.
+- **Backtest**: tarjetas de KPI con una o dos curvas y tabla a partir de tres,
+  que es el mismo corte que hace el PDF.
+- **Desglose de fondos** con **columna de ISIN**, y varias categorias por
+  diapositiva en lugar de una por categoria.
+- **Drawdown** añade una tabla con la caida maxima de cada serie y desde que año
+  hay datos, porque no todas empiezan a la vez.
+- **Asset allocation** con **donuts nativos** por perfil y sus pesos al lado, y
+  los desgloses de divisa en cursiva.
+- **Diapositiva final de informacion legal** (naturaleza del documento, origen de
+  las cifras y advertencia), que no lleva numero de seccion a proposito: no es
+  una septima seccion del informe.
+
+Tamaños de referencia: un perfil da 18 diapositivas, los seis 23, y los seis con
+benchmark 34 (Backtest y Drawdown salen una vez por perfil, como en el PDF).
 
 **Detalles que conviene no deshacer:**
 

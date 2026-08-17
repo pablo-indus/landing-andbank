@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { globalSettings } from '../store';
 import { PROFILES, PROFILE_COLORS } from '../data/portfolioData';
 import { useMonthlyReports } from '../hooks/useMonthlyReports';
+import { maxDrawdown } from '../utils/seriesStats';
 import {
   TODAY,
   buildTrajectory,
@@ -10,15 +11,96 @@ import {
   backtestMetrics,
 } from '../utils/backtestSim';
 
-// Los escenarios 2020 y 2022 usan datos reales de las carteras.
-// El de 2008 NO: las series de Morningstar empiezan en 2010, asi que no existe
-// dato real de esa crisis. Se conserva como ilustracion y va marcado como
-// simulado para que no se confunda con rentabilidad historica.
+// Todos los escenarios menos el de 2008 usan datos reales de las carteras y de
+// sus indices. El de 2008 NO: las series de Morningstar empiezan en noviembre de
+// 2010 y las de benchmark en julio de 2011, asi que no existe dato real de esa
+// crisis. Se conserva como ilustracion, va marcado como simulado y su caida se
+// estima (ver `simulated2008Drops`).
+//
+// Un escenario real solo se pinta para las curvas cuya serie ya existia al
+// empezar: `trajValue` devuelve el primer valor de la serie para cualquier fecha
+// anterior, asi que una cartera que aun no habia nacido saldria como una linea
+// plana —"no perdio nada"— en lugar de como un hueco.
 const STRESS_SCENARIOS = [
-  { id: '2020', label: 'COVID-19 (Feb-May 2020)', start: '2020-02-15', end: '2020-05-31', simulated: false },
-  { id: '2022', label: 'Bear Market (2022)', start: '2021-12-31', end: '2022-10-31', simulated: false },
-  { id: '2008', label: 'Crisis Financiera (2008) · Simulado', start: '2008-01-01', end: '2009-03-31', simulated: true }
+  { id: '2020', label: 'COVID-19 (feb-may 2020)', start: '2020-02-15', end: '2020-05-31', simulated: false },
+  { id: '2022', label: 'Inflación y subida de tipos (2022)', start: '2021-12-31', end: '2022-10-31', simulated: false },
+  { id: '2023', label: 'Banca regional · SVB (2023)', start: '2023-02-28', end: '2023-05-31', simulated: false },
+  { id: '2018', label: '4Q 2018 (oct-dic 2018)', start: '2018-09-28', end: '2018-12-31', simulated: false },
+  { id: '2011', label: 'Crisis de deuda europea (2011-2012)', start: '2011-07-16', end: '2012-07-31', simulated: false },
+  { id: '2008', label: 'Crisis financiera (2008) · Simulado', start: '2008-01-01', end: '2009-03-31', simulated: true },
 ];
+
+/**
+ * Retroceso de cada clase de activo entre enero de 2008 y marzo de 2009.
+ *
+ * Son supuestos declarados, no series: la crisis de 2008 queda fuera de todo el
+ * historico disponible. Se aplican al asset allocation **real** de cada cartera,
+ * que es lo unico que hace que el escenario distinga un perfil de otro.
+ */
+const CRISIS_2008_DROP: { match: string; drop: number }[] = [
+  { match: 'monetario', drop: 0 },
+  { match: 'fija', drop: 0.08 },
+  { match: 'variable', drop: 0.55 },
+  { match: 'alternativos', drop: 0.15 },
+];
+
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+/**
+ * Caida estimada de 2008 por perfil, y la de su indice de referencia.
+ *
+ * La de la cartera sale de sus pesos por clase de activo. La del indice **no**
+ * puede salir de ahi —no conocemos la composicion de la media de categoria de
+ * Morningstar—, asi que se escala la de la cartera por la relacion medida entre
+ * la caida maxima del indice y la de la cartera en el historico que si existe.
+ * Antes era un 50% fijo, igual para los seis perfiles: el indice del perfil mas
+ * conservador caia lo mismo que el del mas agresivo.
+ */
+function simulated2008Drops(
+  allocationRows: any[] | undefined,
+  vlSeries: Record<string, { d: string; v: number }[]>
+): { port: (number | null)[]; bench: (number | null)[] } {
+  const port = PROFILES.map(() => null as number | null);
+  const bench = PROFILES.map(() => null as number | null);
+
+  // Solo el bloque "Distribución de activos": debajo vienen geografia y divisas,
+  // que suman otro 100% y doblarian el peso de la renta variable.
+  const rows: any[] = [];
+  let inside = false;
+  for (const row of allocationRows ?? []) {
+    if (row.isPct === null) inside = String(row.label).toLowerCase().includes('distribución de activos');
+    else if (inside) rows.push(row);
+  }
+
+  PROFILES.forEach((_, pIdx) => {
+    let weight = 0;
+    let drop = 0;
+    for (const row of rows) {
+      const label = String(row.label).toLowerCase();
+      const rule = CRISIS_2008_DROP.find((r) => label.includes(r.match));
+      const w = typeof row.values[pIdx] === 'number' ? row.values[pIdx] : parseFloat(row.values[pIdx]);
+      if (!rule || !Number.isFinite(w) || w <= 0) continue;
+      weight += w;
+      drop += (w / 100) * rule.drop;
+    }
+    // Sin pesos no hay estimacion posible: se deja en null y la curva no se pinta.
+    if (weight <= 0) return;
+    port[pIdx] = clamp(drop * (100 / weight), 0.01, 0.9);
+
+    const p = vlSeries[String(pIdx)];
+    const b = vlSeries[`b${pIdx}`];
+    if (!p?.length || !b?.length) return;
+    // Mismo tramo para los dos, o se compararia la caida de quince años con la
+    // de siete.
+    const from = p[0].d > b[0].d ? p[0].d : b[0].d;
+    const ddP = maxDrawdown(p.filter((pt) => pt.d >= from));
+    const ddB = maxDrawdown(b.filter((pt) => pt.d >= from));
+    if (!ddP || !ddB) return;
+    bench[pIdx] = clamp(port[pIdx]! * clamp(ddB / ddP, 0.4, 3), 0.01, 0.9);
+  });
+
+  return { port, bench };
+}
 
 export const SectionBacktest: React.FC<{
   forcedProfileIndices?: number[];
@@ -27,8 +109,9 @@ export const SectionBacktest: React.FC<{
   forcedShowBenchmark?: boolean;
 }> = ({ forcedProfileIndices, isPrintMode, forcedShowBenchmark }) => {
   // Las curvas de la ultima subida del libro VL; si no hay documento, las
-  // empaquetadas en `vlData.ts`.
-  const { vlSeries } = useMonthlyReports();
+  // empaquetadas en `vlData.ts`. El asset allocation solo lo usa el escenario
+  // simulado de 2008, para repartir su caida por clase de activo.
+  const { vlSeries, assetAllocation } = useMonthlyReports();
   const [profileIdxState, setProfileIdx] = useState<number>(2);
   const [showBenchmark, setShowBenchmark] = useState<boolean>(false);
   const [isStressTest, setIsStressTest] = useState<boolean>(false);
@@ -93,63 +176,100 @@ export const SectionBacktest: React.FC<{
     [trajectories, renderIndices]
   );
 
+  const scenario = STRESS_SCENARIOS.find(s => s.id === stressScenario) || STRESS_SCENARIOS[0];
+
+  /**
+   * Curvas que el escenario elegido puede pintar de verdad.
+   *
+   * En un escenario real, una serie que empieza despues de la crisis no tiene
+   * nada que enseñar: `trajValue` devolveria su primer valor para todas las
+   * fechas anteriores y la curva saldria plana, que es justo lo que se lee como
+   * "esta cartera aguanto la crisis sin caer". El simulado de 2008 usa su propio
+   * corte: se pinta la que tiene pesos de asset allocation.
+   */
+  const drops2008 = useMemo(
+    () => simulated2008Drops(assetAllocation[0]?.rows, vlSeries as any),
+    [assetAllocation, vlSeries]
+  );
+
+  const stressCoverage = useMemo(() => {
+    const start = new Date(scenario.start);
+    const covered = renderIndices.filter(pIdx => {
+      if (scenario.id === '2008') {
+        const drop = pIdx === 999 ? drops2008.bench[benchmarkOf] : drops2008.port[pIdx];
+        return drop !== null && drop !== undefined;
+      }
+      const traj = trajectories[pIdx];
+      return !!traj && traj.dates.length > 0 && traj.dates[0] <= start;
+    });
+    return {
+      covered,
+      missing: renderIndices.filter(pIdx => !covered.includes(pIdx)),
+    };
+  }, [renderIndices, trajectories, scenario, drops2008, benchmarkOf]);
+
   const simResult = useMemo(() => {
     if (isStressTest) {
-      const scenario = STRESS_SCENARIOS.find(s => s.id === stressScenario) || STRESS_SCENARIOS[0];
       const start = new Date(scenario.start);
       const end = new Date(scenario.end);
       const amount = initialAmount;
-      
+      const drawn = stressCoverage.covered;
+      if (drawn.length === 0) return null;
+
       const resDates: string[] = [];
       const capitalSeries: number[] = [];
       const valueSeriesByProfile: Record<number, number[]> = {};
       const finalValues: Record<number, number> = {};
-      
-      renderIndices.forEach(pIdx => {
+
+      drawn.forEach(pIdx => {
         valueSeriesByProfile[pIdx] = [];
       });
 
       if (scenario.id === '2008') {
-        // Curva ILUSTRATIVA, no historica: no hay datos reales de 2008
-        // (las series empiezan en 2010). Se dibuja una caida teorica por perfil.
+        // Curva ILUSTRATIVA, no historica. La profundidad de cada una sale de
+        // `simulated2008Drops`: el asset allocation real de la cartera para los
+        // perfiles y la relacion medida indice/cartera para el benchmark.
         const steps = 15;
         for (let i = 0; i <= steps; i++) {
           const d = new Date(start.getTime() + (end.getTime() - start.getTime()) * (i / steps));
           resDates.push(d.toISOString().slice(0, 10));
           capitalSeries.push(amount);
-          
-          renderIndices.forEach(pIdx => {
-            let maxDrop = pIdx === 999 ? 0.50 : 0.05 + (pIdx % 10) * 0.08;
-            // curve: drop down to maxDrop around step 12, then slight recovery
-            let progress = i / steps;
-            let drop = progress < 0.8 ? maxDrop * Math.sin((progress / 0.8) * Math.PI / 2) : maxDrop - (progress - 0.8) * 0.1;
+
+          drawn.forEach(pIdx => {
+            const maxDrop = (pIdx === 999 ? drops2008.bench[benchmarkOf] : drops2008.port[pIdx]) ?? 0;
+            // Baja hasta el suelo en el 80% del recorrido y rebota un poco.
+            const progress = i / steps;
+            const drop = progress < 0.8
+              ? maxDrop * Math.sin((progress / 0.8) * Math.PI / 2)
+              : maxDrop - (progress - 0.8) * maxDrop * 0.5;
             valueSeriesByProfile[pIdx].push(amount * (1 - drop));
           });
         }
       } else {
-        // Use actual data for 2020 and 2022
-        const datePoints = trajectories[renderIndices[0]].dates.filter(d => d >= start && d <= end);
+        // Datos reales: se compran participaciones el primer dia del escenario
+        // y se valoran dia a dia hasta el ultimo.
+        const datePoints = trajectories[drawn[0]].dates.filter(d => d >= start && d <= end);
         if (!datePoints.find(d => d.getTime() === end.getTime())) datePoints.push(end);
-        
+
         const unitsByProfile: Record<number, number> = {};
-        renderIndices.forEach(pIdx => {
+        drawn.forEach(pIdx => {
            const vl = trajValue(trajectories[pIdx], start);
            unitsByProfile[pIdx] = amount / vl;
         });
-        
+
         for (let i = 0; i < datePoints.length; i++) {
           const d = datePoints[i];
           resDates.push(d.toISOString().slice(0, 10));
           capitalSeries.push(amount);
-          
-          renderIndices.forEach(pIdx => {
+
+          drawn.forEach(pIdx => {
             const vl = trajValue(trajectories[pIdx], d);
             valueSeriesByProfile[pIdx].push(unitsByProfile[pIdx] * vl);
           });
         }
       }
 
-      renderIndices.forEach(pIdx => {
+      drawn.forEach(pIdx => {
         finalValues[pIdx] = valueSeriesByProfile[pIdx][valueSeriesByProfile[pIdx].length - 1];
       });
 
@@ -163,7 +283,10 @@ export const SectionBacktest: React.FC<{
       renderIndices,
       trajectories
     );
-  }, [startDateStr, initialAmount, freq, freqAmount, lumpDateStr, lumpAmount, trajectories, renderIndices, isStressTest, stressScenario]);
+  }, [startDateStr, initialAmount, freq, freqAmount, lumpDateStr, lumpAmount, trajectories, renderIndices, isStressTest, scenario, stressCoverage, drops2008, benchmarkOf]);
+
+  /** Curvas que se dibujan: en stress test, solo las que el escenario cubre. */
+  const drawnIndices = isStressTest ? stressCoverage.covered : renderIndices;
 
   // Cifras de cada perfil, que se pintan como tarjetas en pantalla y como tabla
   // en el PDF cuando hay muchos perfiles.
@@ -171,7 +294,7 @@ export const SectionBacktest: React.FC<{
 
   // Seis perfiles en tarjetas son media hoja de PDF. A partir de tres se
   // resumen en una tabla, que ademas deja compararlos de un vistazo.
-  const kpisAsTable = !!isPrintMode && renderIndices.length > 2;
+  const kpisAsTable = !!isPrintMode && drawnIndices.length > 2;
 
   // SVG Chart Dimensions
   const W = 900;
@@ -182,7 +305,7 @@ export const SectionBacktest: React.FC<{
 
   let allVals: number[] = [...(simResult?.capitalSeries || [100000])];
   if (simResult?.valueSeriesByProfile) {
-    renderIndices.forEach(pIdx => {
+    drawnIndices.forEach(pIdx => {
       allVals.push(...simResult.valueSeriesByProfile[pIdx]);
     });
   } else {
@@ -233,9 +356,28 @@ export const SectionBacktest: React.FC<{
               <span className="text-sm font-bold text-red-900 uppercase tracking-wider">Modo Stress Test</span>
             </label>
             <p className="text-xs text-red-700 ml-6">Simula el comportamiento de la cartera en caídas históricas extremas ({initialAmount.toLocaleString('es-ES')}€ iniciales).</p>
-            {isStressTest && STRESS_SCENARIOS.find(s => s.id === stressScenario)?.simulated && (
-              <p className="text-[11px] font-bold text-red-900 ml-6 mt-1.5 bg-red-100 border border-red-300 rounded px-2 py-1 inline-block">
-                Escenario simulado: no hay datos reales de carteras anteriores a 2010. Curva ilustrativa, no rentabilidad histórica.
+            {isStressTest && scenario.simulated && (
+              <p className="text-[11px] text-red-900 ml-6 mt-1.5 bg-red-100 border border-red-300 rounded px-2 py-1 max-w-xl">
+                <strong className="font-bold">Escenario simulado</strong>: no hay datos reales anteriores a noviembre de 2010
+                (los índices arrancan en julio de 2011). La caída de cada cartera se estima aplicando a su asset allocation
+                actual el retroceso de 2008 de cada clase de activo (renta variable −55%, renta fija −8%, alternativos −15%,
+                monetario 0%), y la de su índice escalando esa caída por la relación medida entre la caída máxima del índice
+                y la de esa misma cartera. Curva ilustrativa, no rentabilidad histórica.
+              </p>
+            )}
+            {/*
+              Una cartera que aun no existia en la crisis no se pinta: su curva
+              saldria plana y eso se lee como "aguanto sin caer".
+            */}
+            {isStressTest && stressCoverage.missing.length > 0 && (
+              <p className="text-[11px] text-red-900 ml-6 mt-1.5 bg-red-100 border border-red-300 rounded px-2 py-1 max-w-xl">
+                Sin datos en este escenario:{' '}
+                <strong className="font-bold">
+                  {stressCoverage.missing.map(p => (p === 999 ? 'el benchmark' : PROFILES[p])).join(', ')}
+                </strong>
+                . {scenario.simulated
+                  ? 'No hay pesos de asset allocation para estimar su caída.'
+                  : `Su serie empieza después de ${new Date(scenario.start).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}.`}
               </p>
             )}
           </div>
@@ -259,7 +401,14 @@ export const SectionBacktest: React.FC<{
           etiqueta y su desplegable, y el "Perfil de inversion" quedaba una
           linea mas bajo que los otros tres campos.
         */}
-        <div className={`bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-lg border border-zinc-200 dark:border-zinc-700 ${isStressTest ? 'opacity-50 pointer-events-none' : ''}`}>
+        {/*
+          En stress test se apagan solo los campos que el escenario decide por
+          su cuenta —las fechas y las aportaciones—, no el bloque entero. El
+          perfil, el importe inicial y la casilla del benchmark siguen vivos:
+          son justo los que hay que poder cambiar para comparar una crisis entre
+          perfiles, y antes obligaban a salir del modo, cambiar y volver a entrar.
+        */}
+        <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-lg border border-zinc-200 dark:border-zinc-700">
           <label className="flex items-center gap-2 cursor-pointer mb-3 w-fit">
             <input
               type="checkbox"
@@ -306,9 +455,9 @@ export const SectionBacktest: React.FC<{
               </p>
             )}
           </div>
-          <div>
+          <div className={isStressTest ? 'opacity-40 pointer-events-none' : ''}>
             <label className="block text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1">
-              Fecha de Inicio
+              Fecha de Inicio {isStressTest && <span className="normal-case tracking-normal">(la fija el escenario)</span>}
             </label>
             <input
               type="date"
@@ -319,9 +468,9 @@ export const SectionBacktest: React.FC<{
               className="w-full bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-600 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-800"
             />
           </div>
-          <div>
+          <div className={isStressTest ? 'opacity-40 pointer-events-none' : ''}>
             <label className="block text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1">
-              Aportación Periódica
+              Aportación Periódica {isStressTest && <span className="normal-case tracking-normal">(no aplica)</span>}
             </label>
             <div className="flex items-center gap-2">
               <select
@@ -346,7 +495,7 @@ export const SectionBacktest: React.FC<{
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-zinc-50 dark:bg-zinc-800/50 px-4 py-3 rounded-lg border border-zinc-200 dark:border-zinc-700">
+        <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-zinc-50 dark:bg-zinc-800/50 px-4 py-3 rounded-lg border border-zinc-200 dark:border-zinc-700 ${isStressTest ? 'opacity-40 pointer-events-none' : ''}`}>
           <div className="flex items-center gap-3">
             <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
               Aportación Puntual Adicional (Opcional):
@@ -388,7 +537,7 @@ export const SectionBacktest: React.FC<{
               </tr>
             </thead>
             <tbody>
-              {renderIndices.map((pIdx) => {
+              {drawnIndices.map((pIdx) => {
                 const m = metricsOf(pIdx);
                 return (
                   <tr key={pIdx} className="border-b border-zinc-100">
@@ -418,7 +567,7 @@ export const SectionBacktest: React.FC<{
         )}
 
         {/* KPIs Results Grid */}
-        {simResult && !kpisAsTable && renderIndices.map(pIdx => {
+        {simResult && !kpisAsTable && drawnIndices.map(pIdx => {
           const { finalValue, gain, gainPct, annualizedPct } = metricsOf(pIdx);
 
           return (
@@ -468,7 +617,7 @@ export const SectionBacktest: React.FC<{
           <div className="relative w-full overflow-hidden pt-2">
             {isPrintMode && (
               <div className="flex flex-wrap gap-4 mb-2 justify-center">
-                {renderIndices.map(pIdx => (
+                {drawnIndices.map(pIdx => (
                   <div key={pIdx} className="flex items-center gap-1.5">
                     <span className="w-3 h-3 rounded-full" style={{ backgroundColor: pIdx === 999 ? '#4B5563' : PROFILE_COLORS[pIdx] }}></span>
                     <span className="text-[10px] font-bold uppercase text-zinc-600 dark:text-zinc-400 tracking-wider">{pIdx === 999 ? 'Benchmark' : PROFILES[pIdx]}</span>
@@ -563,7 +712,7 @@ export const SectionBacktest: React.FC<{
               />
 
               {/* Portfolio Value Paths */}
-              {renderIndices.map(pIdx => (
+              {drawnIndices.map(pIdx => (
                 <path
                   key={pIdx}
                   d={simResult.valueSeriesByProfile[pIdx]
@@ -589,7 +738,7 @@ export const SectionBacktest: React.FC<{
                     strokeWidth={1}
                     strokeDasharray="3 3"
                   />
-                  {renderIndices.map(pIdx => (
+                  {drawnIndices.map(pIdx => (
                     <circle
                       key={pIdx}
                       cx={getX(hoverIndex)}
@@ -613,7 +762,7 @@ export const SectionBacktest: React.FC<{
                 <div className="font-bold text-zinc-300 pb-0.5 border-b border-zinc-700 mb-1 text-[8px]">
                   {simResult.dates[hoverIndex]}
                 </div>
-                {renderIndices.map(pIdx => (
+                {drawnIndices.map(pIdx => (
                 <div key={pIdx} className="flex justify-between gap-3 text-white">
                   <span style={{ color: pIdx === 999 ? '#9CA3AF' : PROFILE_COLORS[pIdx] }}>Valor {pIdx === 999 ? 'Benchmark' : PROFILES[pIdx]}:</span>
                   <span className="font-mono font-bold">
@@ -629,6 +778,18 @@ export const SectionBacktest: React.FC<{
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Ninguna de las curvas elegidas existia en la crisis seleccionada. */}
+        {isStressTest && !simResult && (
+          <div className="border border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg p-8 text-center">
+            <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
+              Sin datos para «{scenario.label}»
+            </p>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+              El histórico del perfil seleccionado empieza después de esta crisis. Elige otro escenario u otro perfil.
+            </p>
           </div>
         )}
 

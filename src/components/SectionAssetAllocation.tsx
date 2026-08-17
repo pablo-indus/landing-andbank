@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { PROFILES, PROFILE_COLORS } from '../data/portfolioData';
 import { useMonthlyReports } from '../hooks/useMonthlyReports';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
+import { breakdownParent } from '../utils/allocationRows';
 import { ScrollableTabs } from './ScrollableTabs';
 
 export const SectionAssetAllocation: React.FC<{ forcedActiveIndices?: number[]; isPrintMode?: boolean }> = ({ forcedActiveIndices, isPrintMode }) => {
@@ -217,7 +218,23 @@ export const SectionAssetAllocation: React.FC<{ forcedActiveIndices?: number[]; 
                   }
                 });
                 
-                return visibleRows.filter(r => r.keep).map((row) => {
+                // "USD - directo" y "USD - indirecto" no se suman a "USD": la
+                // desglosan. Se marcan aqui, con las filas que de verdad se
+                // pintan, para no marcar una que cuelgue de otra que se ha
+                // filtrado por no tener valores.
+                const kept = visibleRows.filter(r => r.keep);
+                const parentOf: Record<number, string | null> = {};
+                let seen: string[] = [];
+                kept.forEach((row) => {
+                  if (row.isPct === null) {
+                    seen = [];
+                    return;
+                  }
+                  parentOf[row.originalIdx] = breakdownParent(row.label, seen);
+                  seen.push(String(row.label));
+                });
+
+                return kept.map((row) => {
                   if (row.isPct === null) {
                     return (
                       <tr
@@ -230,9 +247,16 @@ export const SectionAssetAllocation: React.FC<{ forcedActiveIndices?: number[]; 
                       </tr>
                     );
                   }
+                  const parent = parentOf[row.originalIdx];
                   return (
                     <tr key={row.originalIdx} className="hover:bg-zinc-50 dark:bg-zinc-800/50 transition-colors break-inside-avoid">
-                      <td className={`px-3 font-medium text-zinc-800 dark:text-zinc-200 ${isPrintMode ? "py-0.5 text-[9px]" : "py-2"}`}>
+                      <td
+                        className={`px-3 text-zinc-800 dark:text-zinc-200 ${isPrintMode ? "py-0.5 text-[9px]" : "py-2"} ${
+                          parent ? "pl-7 italic font-normal text-zinc-500 dark:text-zinc-400" : "font-medium"
+                        }`}
+                        title={parent ? `Desglose de ${parent}, no se suma aparte` : undefined}
+                      >
+                        {parent && <span className="text-zinc-300 dark:text-zinc-600 mr-1">└</span>}
                         {row.label}
                       </td>
                       {activeProfileIndices.map((pIdx) => {
@@ -240,7 +264,9 @@ export const SectionAssetAllocation: React.FC<{ forcedActiveIndices?: number[]; 
                         return (
                         <td
                           key={pIdx}
-                          className={`px-3 text-right font-mono tabular-nums text-zinc-700 dark:text-zinc-300 ${isPrintMode ? "py-0.5 text-[9px]" : "py-2"}`}
+                          className={`px-3 text-right font-mono tabular-nums ${
+                            parent ? "italic text-zinc-500 dark:text-zinc-400" : "text-zinc-700 dark:text-zinc-300"
+                          } ${isPrintMode ? "py-0.5 text-[9px]" : "py-2"}`}
                         >
                           {v === null || v === undefined || v === 0 ? (
                             <span className="text-zinc-300">—</span>
@@ -263,6 +289,11 @@ export const SectionAssetAllocation: React.FC<{ forcedActiveIndices?: number[]; 
             </tbody>
           </table>
         </div>
+
+        <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
+          Las filas <em className="italic">en cursiva y sangradas</em> desglosan la que tienen encima y ya están incluidas en
+          ella: por ejemplo, USD directo más USD indirecto suman el USD total, no se añaden a él.
+        </p>
       </div>
     </section>
   );

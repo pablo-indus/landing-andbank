@@ -161,6 +161,55 @@ export const SectionCorrelacion: React.FC = () => {
             <div className="p-8 text-center text-zinc-500 dark:text-zinc-400">Datos no disponibles para este perfil.</div>
           )}
         </div>
+
+        {/*
+          El descargo va plegado, en segundo plano, igual que la composicion de
+          los benchmarks en Rendimiento: quien ya sabe leer la matriz no lo
+          necesita delante, y quien no, lo encuentra donde lo va a buscar.
+        */}
+        <details className="group text-xs">
+          <summary className="cursor-pointer text-zinc-500 dark:text-zinc-400 font-medium hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors flex items-center gap-1.5 select-none opacity-80 hover:opacity-100 p-2 rounded hover:bg-zinc-50 dark:hover:bg-zinc-800/50 w-fit">
+            <svg className="w-3.5 h-3.5 transition-transform group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+            </svg>
+            Qué significa la correlación en esta tabla
+          </summary>
+
+          <div className="bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-700 rounded-lg mt-2 ml-2 p-4 shadow-sm space-y-3 text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-400">
+            <p>
+              Cada celda mide <strong className="font-bold text-zinc-800 dark:text-zinc-200">en qué medida dos fondos de la
+              cartera se han movido en la misma dirección</strong> durante el último año. Va de −1 a +1 y no dice nada sobre
+              cuánto han ganado ni cuánto riesgo tienen: solo si suben y bajan a la vez.
+            </p>
+
+            <ul className="space-y-1">
+              <li className="flex gap-2">
+                <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200 w-12 shrink-0">+1,00</span>
+                <span>Se mueven igual. Tener los dos apenas diversifica.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200 w-12 shrink-0">0,00</span>
+                <span>No hay relación entre sus movimientos.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200 w-12 shrink-0">−1,00</span>
+                <span>Se mueven al revés: cuando uno sube, el otro baja.</span>
+              </li>
+            </ul>
+
+            <p>
+              <strong className="font-bold text-zinc-800 dark:text-zinc-200">Un ejemplo.</strong> Dos fondos de renta variable
+              global suelen salir alrededor de 0,90: en un mal mes caen prácticamente lo mismo, así que repartir el dinero
+              entre los dos no protege la cartera. Un fondo de renta fija de gobiernos frente a uno de bolsa suele salir
+              mucho más bajo —cerca de 0 o negativo—, y ahí sí: cuando uno sufre, el otro amortigua.
+            </p>
+
+            <p className="text-[10px] text-zinc-500 dark:text-zinc-500">
+              Calculada sobre el último año de datos. Es una foto del pasado reciente, no una promesa: en las crisis las
+              correlaciones tienden a subir y activos que parecían independientes caen juntos.
+            </p>
+          </div>
+        </details>
       </div>
     </section>
   );

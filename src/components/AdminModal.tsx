@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Upload, Loader2, Key, LogOut, History, RotateCcw } from 'lucide-react';
+import { X, Upload, Loader2, Key, LogOut, History, RotateCcw, AlertTriangle } from 'lucide-react';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc, getDocs, collection, deleteField } from 'firebase/firestore';
 import { db, auth, firebaseReady } from '../firebase';
@@ -153,15 +153,22 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
   /*
     Segunda via de salida, ademas de la cruz. Mientras se sube no se cierra: el
     proceso escribe decenas de documentos y cerrar el panel a medias no lo
-    detiene, solo deja de verse por donde va.
+    detiene, solo deja de verse por donde va. Con el dialogo de restaurar
+    abierto, Escape lo cierra a el y deja el panel donde estaba: si cerrara los
+    dos, cancelar una restauracion sacaria al equipo del panel entero.
   */
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !loading) onClose();
+      if (e.key !== 'Escape') return;
+      if (confirmRestore) {
+        if (!restoring) setConfirmRestore(null);
+        return;
+      }
+      if (!loading) onClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [loading, onClose]);
+  }, [loading, onClose, confirmRestore, restoring]);
 
   const handleRestore = async (id: string) => {
     setRestoring(id);
@@ -169,12 +176,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
     setUploadMessage('');
     try {
       setUploadMessage(await restoreBackup(id));
-      setConfirmRestore(null);
       await refreshBackups();
     } catch (err: any) {
       setError(err?.message ?? 'No se pudo restaurar la copia.');
     } finally {
       setRestoring(null);
+      // El dialogo se cierra tambien si ha fallado: el aviso se pinta en el
+      // panel, y dejandolo abierto quedaria tapado justo cuando hace falta.
+      setConfirmRestore(null);
     }
   };
 
@@ -553,6 +562,87 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
     }
   };
 
+  const pendingBackup = backups.find((b) => b.id === confirmRestore) ?? null;
+
+  /*
+    Confirmacion de restaurar.
+
+    Va en su propia capa por encima del panel, con el mismo lenguaje visual
+    (tarjeta blanca, cabecera con filete, mayusculas espaciadas) y el boton de
+    confirmar en rojo, que es el unico de todo el panel que borra trabajo. Se
+    limita en alto y el cuerpo se desplaza por lo mismo que el panel: con una
+    copia de 82 documentos el texto crece y sin tope los botones se salen por
+    debajo de la pantalla.
+  */
+  const restoreDialog = pendingBackup && (
+    <div className="fixed inset-0 z-[110] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-zinc-900 w-full max-w-sm max-h-[90vh] flex flex-col rounded-xl shadow-2xl overflow-hidden border border-zinc-200 dark:border-zinc-700 animate-in fade-in zoom-in-95 duration-200">
+        <div className="shrink-0 px-5 py-4 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+          <h3 className="font-extrabold text-zinc-900 dark:text-white uppercase tracking-wider text-sm flex items-center gap-2">
+            <AlertTriangle size={16} className="text-red-600" /> Restaurar esta copia
+          </h3>
+          <button
+            onClick={() => setConfirmRestore(null)}
+            disabled={restoring !== null}
+            className="text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors cursor-pointer p-1 disabled:opacity-40"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          <div className="border border-zinc-200 dark:border-zinc-700 rounded px-3 py-2">
+            <p className="text-xs font-bold text-zinc-800 dark:text-zinc-200">{pendingBackup.label}</p>
+            <p className="text-[11px] text-zinc-600 dark:text-zinc-400 break-words">
+              {pendingBackup.fileName ?? 'Archivo sin registrar (copia anterior)'}
+            </p>
+            <p className="text-[11px] text-zinc-500">
+              {new Date(pendingBackup.createdAt).toLocaleString('es-ES', {
+                day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+              })}
+              {' · '}
+              {pendingBackup.docIds.length} documento(s)
+            </p>
+          </div>
+
+          <div className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed space-y-2">
+            <p>
+              Restaurar devuelve esos {pendingBackup.docIds.length} documento(s) al contenido que tenian{' '}
+              <strong className="font-bold text-zinc-800 dark:text-zinc-200">justo antes de aquella subida</strong>. La web lo
+              refleja al instante, sin volver a desplegar.
+            </p>
+            <p>
+              Se pierde lo que se haya subido despues <em>sobre esos mismos documentos</em>. Lo que no toco aquella subida se
+              queda como esta. Si un documento no existia antes, se borra.
+            </p>
+            <p>
+              La copia no se consume: se puede restaurar otra vez, y la subida siguiente creara su propia copia de lo que
+              haya ahora.
+            </p>
+          </div>
+        </div>
+
+        <div className="shrink-0 px-5 py-4 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-end gap-2">
+          <button
+            onClick={() => setConfirmRestore(null)}
+            disabled={restoring !== null}
+            className="px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => handleRestore(pendingBackup.id)}
+            disabled={restoring !== null}
+            className="px-3 py-2 bg-red-700 text-white rounded-md text-xs font-bold uppercase tracking-wider hover:bg-red-800 transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+          >
+            {restoring !== null && <Loader2 size={14} className="animate-spin" />}
+            {restoring !== null ? 'Restaurando...' : 'Si, restaurar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   const modalContent = (
     <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
       {/*
@@ -733,31 +823,26 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
                           </p>
                         </div>
 
-                        {confirmRestore === b.id ? (
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              onClick={() => handleRestore(b.id)}
-                              disabled={restoring !== null}
-                              className="px-2 py-1 bg-red-700 text-white rounded text-[10px] font-bold uppercase tracking-wider hover:bg-red-800 disabled:opacity-50 cursor-pointer flex items-center gap-1"
-                            >
-                              {restoring === b.id && <Loader2 size={11} className="animate-spin" />}
-                              Confirmar
-                            </button>
-                            <button
-                              onClick={() => setConfirmRestore(null)}
-                              className="px-2 py-1 text-zinc-500 text-[10px] font-bold uppercase tracking-wider cursor-pointer"
-                            >
-                              No
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setConfirmRestore(b.id)}
-                            className="shrink-0 flex items-center gap-1 px-2 py-1 border border-zinc-300 dark:border-zinc-600 rounded text-[10px] font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer"
-                          >
-                            <RotateCcw size={11} /> Restaurar
-                          </button>
-                        )}
+                        {/*
+                          Restaurar pisa documentos de produccion, asi que no se
+                          dispara desde la propia lista: abre un dialogo aparte
+                          que dice en que consiste. Con el "Confirmar" en linea,
+                          dos clics seguidos en el mismo sitio —el segundo caia
+                          justo donde estaba el boton de restaurar— deshacian una
+                          subida sin querer.
+                        */}
+                        <button
+                          onClick={() => setConfirmRestore(b.id)}
+                          disabled={restoring !== null}
+                          className="shrink-0 flex items-center gap-1 px-2 py-1 border border-zinc-300 dark:border-zinc-600 rounded text-[10px] font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50 cursor-pointer"
+                        >
+                          {restoring === b.id ? (
+                            <Loader2 size={11} className="animate-spin" />
+                          ) : (
+                            <RotateCcw size={11} />
+                          )}
+                          Restaurar
+                        </button>
                       </li>
                     ))}
                   </ul>
@@ -770,5 +855,11 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose }) => {
     </div>
   );
 
-  return createPortal(modalContent, document.body);
+  return createPortal(
+    <>
+      {modalContent}
+      {restoreDialog}
+    </>,
+    document.body
+  );
 };

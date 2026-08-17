@@ -96,9 +96,13 @@ export const SectionComposicion: React.FC<{ forcedActiveIndices?: number[]; isPr
                         </span>
                         {catGroup.cat}
                       </td>
-                      <td className={`px-3 text-zinc-400 font-mono ${isPrintMode ? "py-0.5 text-[8px]" : "py-2.5 text-[10px]"}`}>
-                        Categoría
-                      </td>
+                      {/*
+                        La celda va vacia a proposito: la fila ya se ve que es
+                        una categoria por el color y la flecha, y escribir
+                        "Categoría" en la columna de ISIN no aporta nada. La
+                        celda se queda para no descuadrar las columnas.
+                      */}
+                      <td className={`px-3 ${isPrintMode ? "py-0.5" : "py-2.5"}`} />
                       {activeProfileIndices.map((pIdx) => {
                         const tot = catGroup.totals[pIdx];
                         return (

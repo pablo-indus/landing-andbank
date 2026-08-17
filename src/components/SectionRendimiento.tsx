@@ -2,11 +2,62 @@ import React, { useState, useRef, useMemo } from 'react';
 import { PROFILES, PROFILE_COLORS, HISTORICAL_VL } from '../data/portfolioData';
 import { BENCHMARK_SERIES } from '../data/vlSeries';
 import { useMonthlyReports } from '../hooks/useMonthlyReports';
-import { windowStats } from '../utils/seriesStats';
+import { toMonthEnds, windowStats } from '../utils/seriesStats';
 import { PERFORMANCE_SCHEMA_VERSION, WINDOW_MONTHS, type WindowKey } from '../utils/performanceProcessor';
 import { ScrollableTabs } from './ScrollableTabs';
 
 type Period = 'YTD' | '2025' | '1Y' | '2Y' | '3Y' | '5Y' | '2009';
+
+/** Gris del benchmark, el mismo que usan Backtest y Drawdown. */
+const BENCH_COLOR = '#4B5563';
+
+/** Meses de cada ventana movil del grafico de barras. */
+const BAR_WINDOW_MONTHS: Partial<Record<Period, number>> = { '1Y': 12, '2Y': 24, '3Y': 36, '5Y': 60 };
+
+/**
+ * Rentabilidad del indice de referencia en cada periodo del grafico de barras.
+ *
+ * Sale de la serie diaria del propio indice, con las mismas funciones que el
+ * grafico de retorno/riesgo (`toMonthEnds` + `windowStats`), asi que las dos
+ * cifras de una misma ventana no pueden discrepar. Los cierres son mensuales a
+ * proposito: las series de benchmark vienen interpoladas los fines de semana y
+ * en diario todo lo que se calcula sobre ellas queda sesgado (ver seccion 4 del
+ * plan).
+ *
+ * "Desde 2009" se queda a null: los indices empiezan en julio de 2011, asi que
+ * no hay periodo comparable y un numero ahi invitaria a comparar diecisiete años
+ * de cartera con quince de indice.
+ */
+function benchmarkByPeriod(series: { d: string; v: number }[] | undefined): Record<Period, number | null> {
+  const out = { YTD: null, '2025': null, '1Y': null, '2Y': null, '3Y': null, '5Y': null, '2009': null } as Record<Period, number | null>;
+  if (!series?.length) return out;
+
+  for (const [period, months] of Object.entries(BAR_WINDOW_MONTHS)) {
+    out[period as Period] = windowStats(series, months!).ret;
+  }
+
+  const months = toMonthEnds(series);
+  if (months.length === 0) return out;
+  const at = (ym: string) => months.find((m) => m.m === ym)?.v ?? null;
+
+  // Año natural cerrado: diciembre contra diciembre. El año sale de la propia
+  // pestaña y no escrito aqui: la lista avanza un año en cada cierre anual y una
+  // cifra fija se quedaria calculando 2025 debajo del rotulo "2026".
+  for (const period of PERIODS) {
+    if (!/^\d{4}$/.test(period.id)) continue;
+    const year = Number(period.id);
+    const end = at(`${year}-12`);
+    const start = at(`${year - 1}-12`);
+    out[period.id] = end !== null && start !== null ? (end / start - 1) * 100 : null;
+  }
+
+  // Lo que va de año: desde el cierre de diciembre hasta el ultimo mes completo.
+  const last = months[months.length - 1];
+  const base = at(`${Number(last.m.slice(0, 4)) - 1}-12`);
+  out.YTD = base !== null ? (last.v / base - 1) * 100 : null;
+
+  return out;
+}
 
 /** Lo que necesita un punto del grafico de retorno/riesgo. */
 interface ScatterStats {
@@ -74,10 +125,14 @@ const PERIODS: { id: Period; label: string }[] = [
 export const SectionRendimiento: React.FC<{ forcedActiveIndices?: number[]; isPrintMode?: boolean }> = ({ forcedActiveIndices, isPrintMode }) => {
   // Cifras netas de comisiones del libro AA. Si la base de datos aun no las
   // tiene, el hook devuelve las estaticas y la seccion sigue funcionando.
-  const { profileKpis, windows, performance } = useMonthlyReports();
+  const { profileKpis, windows, performance, vlSeries } = useMonthlyReports();
   const scatterStats = useScatterStats(performance);
 
   const [selectedPeriod, setSelectedPeriod] = useState<Period>('1Y');
+  // Comparacion con el indice en las barras. Solo tiene sentido con un perfil:
+  // cada cartera tiene su propio benchmark y seis pares de barras por periodo no
+  // se pueden leer.
+  const [compareBenchmark, setCompareBenchmark] = useState(false);
   const [scatterPeriod, setScatterPeriod] = useState<Period>('1Y');
   const SCATTER_PERIODS: { id: Period; label: string }[] = [
     { id: '1Y', label: '1 Año' },
@@ -145,34 +200,56 @@ export const SectionRendimiento: React.FC<{ forcedActiveIndices?: number[]; isPr
   const iw = W - M.l - M.r;
   const ih = H - M.t - M.b;
   const selectedProfileIndices = PROFILES.map((_, i) => i).filter((i) => visibleProfiles[i]);
+  const singleProfile = selectedProfileIndices.length === 1 ? selectedProfileIndices[0] : null;
+  const benchRets = useMemo(
+    () => (singleProfile === null ? null : benchmarkByPeriod((vlSeries as any)[`b${singleProfile}`])),
+    [singleProfile, vlSeries]
+  );
+  // En el PDF la seccion sale con los perfiles del informe y sin controles, asi
+  // que la comparacion con el indice se queda en pantalla.
+  const showBarBenchmark = !isPrintMode && compareBenchmark && singleProfile !== null && !!benchRets;
 
-  let chartBars: { id: string, label: string, val: number, color: string, name: string, groupIdx: number, barIdxInGroup: number, totalBarsInGroup: number, isLastInGroup: boolean }[] = [];
-  
+  let chartBars: { id: string, label: string, val: number, color: string, name: string, groupIdx: number, barIdxInGroup: number, totalBarsInGroup: number }[] = [];
+
   const numGroups = PERIODS.length;
-  const numBarsPerGroup = selectedProfileIndices.length;
+  const numBarsPerGroup = selectedProfileIndices.length + (showBarBenchmark ? 1 : 0);
 
   PERIODS.forEach((p, groupIdx) => {
     const pData = getPeriodData(p.id);
-    let barsAdded = 0;
-    const nonNullProfiles = selectedProfileIndices.filter(profileIdx => pData[profileIdx] !== null);
-    nonNullProfiles.forEach((profileIdx, idx) => {
-       const val = pData[profileIdx];
-       chartBars.push({
-          id: p.id + '-' + profileIdx,
-          label: p.label,
-          val: val,
-          color: PROFILE_COLORS[profileIdx],
-          name: p.label + ' - ' + PROFILES[profileIdx],
-          groupIdx,
-          barIdxInGroup: idx,
-          totalBarsInGroup: nonNullProfiles.length,
-          isLastInGroup: false
-       });
-       barsAdded++;
+
+    const entries: { id: string; val: number; color: string; name: string }[] = [];
+    selectedProfileIndices.forEach((profileIdx) => {
+      const val = pData[profileIdx];
+      if (val === null || val === undefined) return;
+      entries.push({
+        id: `${p.id}-${profileIdx}`,
+        val,
+        color: PROFILE_COLORS[profileIdx],
+        name: `${p.label} - ${PROFILES[profileIdx]}`,
+      });
     });
-    if (barsAdded > 0) {
-      chartBars[chartBars.length - 1].isLastInGroup = true;
+
+    if (showBarBenchmark) {
+      const val = benchRets![p.id];
+      if (val !== null && val !== undefined) {
+        entries.push({
+          id: `${p.id}-bench`,
+          val,
+          color: BENCH_COLOR,
+          name: `${p.label} - BMK ${PROFILES[singleProfile!]}`,
+        });
+      }
     }
+
+    entries.forEach((entry, idx) => {
+      chartBars.push({
+        ...entry,
+        label: p.label,
+        groupIdx,
+        barIdxInGroup: idx,
+        totalBarsInGroup: entries.length,
+      });
+    });
   });
 
   let maxValue = 0;
@@ -223,7 +300,31 @@ export const SectionRendimiento: React.FC<{ forcedActiveIndices?: number[]; isPr
         {/* Controls */}
         {!isPrintMode && (
         <div className="flex flex-col gap-4 border-b border-zinc-100 pb-4">
-
+          {/*
+            La casilla se queda visible pero desactivada con varios perfiles, en
+            vez de desaparecer: si no, quien la ha usado una vez no encuentra por
+            que ha dejado de estar y cree que se ha roto.
+          */}
+          <label
+            className={`flex items-center gap-2 w-fit pt-2 ${singleProfile === null ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+            title={singleProfile === null ? 'Deja un solo perfil seleccionado para comparar con su índice' : undefined}
+          >
+            <input
+              type="checkbox"
+              checked={showBarBenchmark}
+              disabled={singleProfile === null}
+              onChange={(e) => setCompareBenchmark(e.target.checked)}
+              className="w-4 h-4 text-red-600 rounded border-zinc-300 dark:border-zinc-600 focus:ring-red-600 disabled:cursor-not-allowed"
+            />
+            <span className="text-xs font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider">
+              Comparar con Benchmark
+            </span>
+            {singleProfile === null && (
+              <span className="text-[10px] font-medium text-zinc-400 normal-case tracking-normal">
+                (solo con un perfil seleccionado)
+              </span>
+            )}
+          </label>
 
           {/* Profile Legends */}
           <div className="flex flex-wrap items-center gap-1.5 pt-2">
@@ -247,6 +348,15 @@ export const SectionRendimiento: React.FC<{ forcedActiveIndices?: number[]; isPr
                 </button>
               );
             })}
+            {showBarBenchmark && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-bold border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200">
+                <span
+                  className="w-2.5 h-2.5 rounded-xs transform -rotate-12 inline-block shrink-0"
+                  style={{ backgroundColor: BENCH_COLOR }}
+                />
+                BMK {PROFILES[singleProfile!]}
+              </span>
+            )}
           </div>
         </div>
         )}
@@ -293,10 +403,6 @@ export const SectionRendimiento: React.FC<{ forcedActiveIndices?: number[]; isPr
               const yVal = getY(val);
               const by = Math.min(y0, yVal);
               const bHeight = Math.abs(y0 - yVal);
-              
-              // Only draw label once per group, in the center
-              const isCenterBar = bar.barIdxInGroup === Math.floor(numBarsPerGroup / 2);
-              const groupCenter = M.l + (bar.groupIdx + 0.5) * groupWidth;
 
               return (
                 <g key={bar.id}>
@@ -321,21 +427,40 @@ export const SectionRendimiento: React.FC<{ forcedActiveIndices?: number[]; isPr
                       {val.toFixed(1).replace('.', ',')}%
                     </text>
                   ) : null}
-                  {isCenterBar && (
-                    <text
-                      x={groupCenter}
-                      y={H - 15}
-                      className="fill-zinc-500 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider"
-                      textAnchor="middle"
-                    >
-                      {bar.label}
-                    </text>
-                  )}
                 </g>
               );
             })}
+
+            {/*
+              Las etiquetas de periodo se dibujan aparte, una por grupo.
+              Cuando colgaban de "la barra del centro" desaparecian en cuanto el
+              grupo tenia menos barras que perfiles seleccionados: con Conservador +
+              y Agresivo + —que no tienen historico en casi ninguna ventana— mas un
+              tercer perfil, el indice de la barra central no existia en ningun
+              grupo y el eje X se quedaba entero sin rotulos.
+            */}
+            {PERIODS.map((p, groupIdx) => (
+              <text
+                key={`label-${p.id}`}
+                x={M.l + (groupIdx + 0.5) * groupWidth}
+                y={H - 15}
+                className="fill-zinc-500 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider"
+                textAnchor="middle"
+              >
+                {p.label}
+              </text>
+            ))}
           </svg>
         </div>
+
+        {/* Nota de la comparacion: cartera neta, indice bruto y el hueco de 2009. */}
+        {showBarBenchmark && (
+          <p className="text-[10px] text-zinc-500 dark:text-zinc-400 -mt-2">
+            Barras grises: <strong className="font-bold">{BENCHMARK_SERIES[singleProfile!] ?? 'índice de referencia'}</strong>,
+            calculado sobre cierres mensuales de la serie del índice. La cartera es neta de comisiones y el índice no descuenta
+            ninguna. En «Desde 2009» no hay barra de índice: las series de benchmark empiezan en julio de 2011.
+          </p>
+        )}
 
         {!isPrintMode && (
         <>

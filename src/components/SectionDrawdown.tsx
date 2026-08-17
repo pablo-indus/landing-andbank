@@ -12,6 +12,33 @@ const PERIODS: { id: Period; label: string }[] = [
   { id: 'Desde 2009', label: 'Desde 2009' }
 ];
 
+/**
+ * Episodios macro del horizonte que cubren las series (noviembre de 2010 en
+ * adelante), en orden. Los que traen `end` se pintan como banda —el mercado
+ * estuvo cayendo durante ese tramo— y los que no, como una linea: son un dia
+ * concreto.
+ *
+ * Solo se dibuja lo que cae dentro del periodo visible y recortado al area del
+ * grafico. Antes se pintaban los tres siempre, con la coordenada que saliera:
+ * con el periodo en 1 o 3 años la banda de 2020 se dibujaba a la izquierda del
+ * eje, encima de las etiquetas de porcentaje, porque el `<svg>` va con
+ * `overflow-visible`.
+ */
+const MACRO_EVENTS: { label: string; start: string; end?: string }[] = [
+  { label: 'Deuda europea', start: '2011-08-01', end: '2012-07-26' },
+  { label: 'Taper tantrum', start: '2013-05-22', end: '2013-06-24' },
+  { label: 'Yuan · China', start: '2015-08-11', end: '2015-09-29' },
+  { label: 'Brexit', start: '2016-06-24' },
+  { label: '4Q 2018', start: '2018-10-01', end: '2018-12-24' },
+  { label: 'COVID-19', start: '2020-02-20', end: '2020-04-01' },
+  { label: 'Inflación y tipos', start: '2022-01-01', end: '2022-10-31' },
+  { label: 'Banca regional · SVB', start: '2023-03-09', end: '2023-03-31' },
+  { label: 'Liberation Day', start: '2025-04-02' },
+];
+
+/** Ancho aproximado de una etiqueta a 9 px, para saber si dos se pisarian. */
+const labelWidth = (text: string) => text.length * 4.9 + 6;
+
 export const SectionDrawdown: React.FC<{
   forcedActiveIndices?: number[];
   isPrintMode?: boolean;
@@ -179,7 +206,43 @@ const trajectories = useMemo(() => {
     yTicks.push(v);
   }
 
-  
+  /*
+    Eventos que caen dentro de la ventana visible, ya recortados al area del
+    grafico y con la etiqueta colocada en una de dos alturas para que dos
+    episodios seguidos —Taper tantrum y el yuan, por ejemplo— no se solapen.
+    Una banda mas estrecha que 3 px se dibuja como linea: a esa escala un
+    rectangulo no se distingue de una raya, pero sin el la crisis desaparece.
+  */
+  const placedEvents = (() => {
+    const plotRight = M.l + iw;
+    const out: {
+      label: string; x0: number; x1: number; isBand: boolean; labelX: number; row: number;
+    }[] = [];
+    // Ultima posicion ocupada en cada altura de etiqueta.
+    const rowEnds = [-Infinity, -Infinity];
+
+    for (const ev of MACRO_EVENTS) {
+      const t0 = new Date(`${ev.start}T00:00:00Z`).getTime();
+      const t1 = ev.end ? new Date(`${ev.end}T00:00:00Z`).getTime() : t0;
+      if (t1 < xMin || t0 > xMax) continue;
+
+      const x0 = Math.max(M.l, getX(Math.max(t0, xMin)));
+      const x1 = Math.min(plotRight, getX(Math.min(t1, xMax)));
+      const isBand = !!ev.end && x1 - x0 >= 3;
+
+      const w = labelWidth(ev.label);
+      const labelX = Math.min(plotRight - w / 2, Math.max(M.l + w / 2, (x0 + x1) / 2));
+      // Si no cabe en la primera altura se baja a la segunda; si tampoco, se
+      // queda sin rotulo pero la banda se sigue viendo.
+      const row = labelX - w / 2 >= rowEnds[0] ? 0 : labelX - w / 2 >= rowEnds[1] ? 1 : -1;
+      if (row >= 0) rowEnds[row] = labelX + w / 2 + 4;
+
+      out.push({ label: ev.label, x0, x1, isBand, labelX, row });
+    }
+
+    return out;
+  })();
+
   const getClosestPt = (pts: {d: Date, dd: number}[], targetTime: number) => {
     if (!pts || !pts.length) return null;
     let closest = pts[0];
@@ -332,21 +395,33 @@ const trajectories = useMemo(() => {
               </g>
             )}
             
-            {/* Grid Y */}
-            {/* Historical Events Shading */}
-                        {/* Historical Events Shading */}
-            <g opacity="0.4">
-              
-              
-              <line x1={getX(new Date('2025-04-01T00:00:00Z').getTime())} y1={M.t} x2={getX(new Date('2025-04-01T00:00:00Z').getTime())} y2={M.t + ih} stroke="#991B1B" strokeWidth={1.5} strokeDasharray="4 4" />
-              <text x={getX(new Date('2025-04-01T00:00:00Z').getTime())} y={M.t + ih - 8} fontSize="11" fill="#991B1B" textAnchor="middle" fontWeight="bold">Liberation Day</text>
-
-
-              <rect x={getX(new Date('2020-02-20T00:00:00Z').getTime())} y={M.t} width={getX(new Date('2020-04-01T00:00:00Z').getTime()) - getX(new Date('2020-02-20T00:00:00Z').getTime())} height={ih} fill="#FECACA" />
-              <text x={getX(new Date('2020-03-01T00:00:00Z').getTime())} y={M.t + ih - 8} fontSize="9" fill="#991B1B" textAnchor="middle" fontWeight="bold">COVID-19</text>
-              
-              <rect x={getX(new Date('2022-01-01T00:00:00Z').getTime())} y={M.t} width={getX(new Date('2022-10-31T00:00:00Z').getTime()) - getX(new Date('2022-01-01T00:00:00Z').getTime())} height={ih} fill="#FECACA" />
-              <text x={getX(new Date('2022-06-01T00:00:00Z').getTime())} y={M.t + ih - 8} fontSize="9" fill="#991B1B" textAnchor="middle" fontWeight="bold">Crisis 2022</text>
+            {/* Episodios macro del periodo visible */}
+            <g>
+              {placedEvents.map((ev, i) => (
+                <g key={`ev-${i}`}>
+                  {ev.isBand ? (
+                    <rect x={ev.x0} y={M.t} width={ev.x1 - ev.x0} height={ih} fill="#FECACA" opacity={0.45} />
+                  ) : (
+                    <line
+                      x1={ev.x0} y1={M.t} x2={ev.x0} y2={M.t + ih}
+                      stroke="#991B1B" strokeWidth={1.25} strokeDasharray="4 4" opacity={0.5}
+                    />
+                  )}
+                  {ev.row >= 0 && (
+                    <text
+                      x={ev.labelX}
+                      y={M.t + ih - (ev.row === 0 ? 8 : 20)}
+                      fontSize="9"
+                      fill="#991B1B"
+                      textAnchor="middle"
+                      fontWeight="bold"
+                      opacity={0.85}
+                    >
+                      {ev.label}
+                    </text>
+                  )}
+                </g>
+              ))}
             </g>
 
             {yTicks.map(val => {
